@@ -46,9 +46,10 @@ def test_analyze_email_response_structure():
     assert response.status_code == 200
     data = response.json()
 
-    # Verify both parsed email and sender analysis sections exist
+    # Verify parsed email, sender analysis, and URL analysis sections exist
     assert "email" in data
     assert "sender_analysis" in data
+    assert "url_analysis" in data
 
     # Verify email component
     email_data = data["email"]
@@ -67,6 +68,14 @@ def test_analyze_email_response_structure():
     assert sender_analysis["risk_factors"] == []
     assert sender_analysis["warnings"] == []
 
+    # Verify URL analysis component
+    url_analysis = data["url_analysis"]
+    assert len(url_analysis) == 1
+    assert url_analysis[0]["url"] == "https://example.com/verify"
+    assert url_analysis[0]["uses_https"] is True
+    assert url_analysis[0]["is_ip_address"] is False
+    assert url_analysis[0]["domain"] == "example.com"
+
 
 def test_analyze_email_suspicious_sender_pipeline():
     payload = {
@@ -82,6 +91,15 @@ def test_analyze_email_suspicious_sender_pipeline():
     assert data["sender_analysis"]["domain"] == "192.168.1.1"
     assert data["sender_analysis"]["sender_risk_score"] > 0
     assert len(data["sender_analysis"]["risk_factors"]) > 0
+
+    # Verify URL analysis for the suspicious URL
+    assert "url_analysis" in data
+    assert len(data["url_analysis"]) == 1
+    url_result = data["url_analysis"][0]
+    assert url_result["is_ip_address"] is True
+    assert url_result["uses_https"] is False
+    assert url_result["url_risk_score"] > 0
+    assert len(url_result["risk_factors"]) > 0
 
 
 def test_analyze_email_missing_field_returns_422():
