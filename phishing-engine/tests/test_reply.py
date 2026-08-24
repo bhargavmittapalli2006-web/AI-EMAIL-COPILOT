@@ -276,3 +276,48 @@ def test_api_reply_suggestions_endpoint_phishing():
     assert data["friendly_reply"] is None
     assert data["concise_reply"] is None
     assert data["source"] == "blocked"
+
+
+# 14. Server-Side Analysis Failure Fails Closed Test
+def test_server_analysis_failure_fails_closed():
+    service = ReplyService()
+    
+    with patch("app.reply_service.phishing_service.analyze_email", side_effect=RuntimeError("Model inference engine crashed")):
+        request = ReplySuggestionsRequest(
+            subject="Team Lunch",
+            sender="colleague@company.com",
+            body="Are we meeting for lunch at noon?",
+            is_phishing=False,
+            risk_score=5.0,
+            risk_level="LOW"
+        )
+        response = service.generate_reply_suggestions(request)
+        assert response.reply_allowed is False
+        assert response.professional_reply is None
+        assert response.friendly_reply is None
+        assert response.concise_reply is None
+        assert response.source == "blocked"
+        assert "disabled" in response.reason.lower()
+
+
+# 15. Verify Gemini is NEVER called for blocked/phishing emails
+def test_gemini_not_called_for_blocked_emails():
+    service = ReplyService()
+    mock_client = MagicMock()
+    service.client = mock_client
+
+    request = ReplySuggestionsRequest(
+        subject="URGENT: Verify account",
+        sender="attacker@fake.xyz",
+        body="Verify credentials at http://192.168.1.1/login",
+        is_phishing=True,
+        risk_score=95.0,
+        risk_level="CRITICAL"
+    )
+
+    response = service.generate_reply_suggestions(request)
+    assert response.reply_allowed is False
+    assert response.source == "blocked"
+    # Ensure client.models.generate_content was NOT called
+    mock_client.models.generate_content.assert_not_called()
+

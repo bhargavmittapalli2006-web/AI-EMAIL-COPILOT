@@ -98,10 +98,17 @@ class ReplyService:
             server_risk_level = str(analysis.risk_level.value if hasattr(analysis.risk_level, 'value') else analysis.risk_level).upper()
             server_risk_score = analysis.risk_score
         except Exception as e:
-            logger.warning("Could not run server-side analysis during reply check: %s. Using request metadata.", e)
-            server_is_phishing = bool(request.is_phishing)
-            server_risk_level = str(request.risk_level or "LOW").upper()
-            server_risk_score = request.risk_score or 0.0
+            logger.error("Could not run authoritative server-side analysis during reply check: %s. Failing closed for safety.", e)
+            # Fail closed: Do not allow reply generation if security analysis fails
+            return ReplySuggestionsResponse(
+                reply_allowed=False,
+                reason="Reply generation disabled because security analysis could not be completed.",
+                professional_reply=None,
+                friendly_reply=None,
+                concise_reply=None,
+                source="blocked"
+            )
+
 
         # Determine if email is a threat from authoritative analysis or client request metadata
         is_threat = (
