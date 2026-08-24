@@ -2,11 +2,12 @@ import os
 import sys
 
 # Ensure ml modules are discoverable
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from ml.model import PhishingModel
 from ml.dataset import get_sample_dataset
 from app.schemas import EmailAnalysisRequest, PhishingAnalysisResponse
+
 
 class PhishingService:
     """Service layer for managing model inference and fallback initialization."""
@@ -43,6 +44,7 @@ class PhishingService:
             flagged_reasons=result["flagged_reasons"],
             features=result["features"]
         )
+
 
 # Global service instance
 phishing_service = PhishingService()

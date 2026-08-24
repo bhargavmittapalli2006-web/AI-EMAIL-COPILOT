@@ -1,39 +1,42 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from app.schemas import EmailAnalysisRequest, PhishingAnalysisResponse
-from app.services import phishing_service
+from fastapi import FastAPI
+from app.schemas import EmailRequest, HealthResponse, EmailAnalysisResponse
+from app.services.email_parser import EmailParser
+from app.services.sender_analyzer import SenderAnalyzer
 
 app = FastAPI(
-    title="AI Email Copilot - Security & Phishing Engine",
-    description="Microservice responsible for email phishing detection, risk scoring, and threat explanations.",
-    version="1.0.0"
+    title="AI Email Copilot — Phishing Engine",
+    description="Security & Phishing detection microservice for AI Email Copilot.",
+    version="0.4.0",
 )
 
-# Enable CORS for future frontend integration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+email_parser = EmailParser()
+sender_analyzer = SenderAnalyzer()
 
-@app.get("/health", tags=["Health"])
+
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
 def health_check():
-    """Health check endpoint verifying server status and model readiness."""
-    return {
-        "status": "healthy",
-        "service": "phishing-engine",
-        "model_loaded": phishing_service.model.is_trained
-    }
+    """Returns service health status."""
+    return HealthResponse(
+        status="healthy",
+        service="phishing-engine",
+    )
 
-@app.post("/api/v1/analyze", response_model=PhishingAnalysisResponse, tags=["Phishing Analysis"])
-def analyze_email(request: EmailAnalysisRequest):
+
+@app.post("/analyze-email", response_model=EmailAnalysisResponse, tags=["Analysis"])
+def analyze_email(request: EmailRequest) -> EmailAnalysisResponse:
     """
-    Analyzes an email payload for phishing indicators, calculates a risk score (0-100),
-    and provides human-readable explanations of flagged security threats.
+    Parses an incoming email payload and performs safe sender security analysis.
+    Returns both the parsed email data and sender security signals.
     """
-    try:
-        return phishing_service.analyze_email(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Phishing analysis failed: {str(e)}")
+    parsed_email = email_parser.parse(
+        sender=request.sender,
+        subject=request.subject,
+        body=request.body,
+    )
+
+    sender_result = sender_analyzer.analyze(raw_sender=parsed_email.sender)
+
+    return EmailAnalysisResponse(
+        email=parsed_email,
+        sender_analysis=sender_result,
+    )

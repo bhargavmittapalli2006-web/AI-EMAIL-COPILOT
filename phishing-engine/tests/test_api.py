@@ -1,49 +1,92 @@
-import os
 import sys
-import pytest
-from fastapi.testclient import TestClient
+import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import pytest
+from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
 
-def test_health_endpoint():
+
+# ──────────────────────────── /health ────────────────────────────
+
+def test_health_returns_200():
     response = client.get("/health")
     assert response.status_code == 200
+
+
+def test_health_response_body():
+    response = client.get("/health")
     data = response.json()
     assert data["status"] == "healthy"
     assert data["service"] == "phishing-engine"
-    assert data["model_loaded"] is True
 
-def test_analyze_phishing_email():
+
+# ──────────────────────────── /analyze-email ─────────────────────
+
+def test_analyze_email_returns_200():
     payload = {
-        "subject": "URGENT: Bank account security alert",
-        "sender": "alert@bank-update.xyz",
-        "reply_to": "hacker@gmail.com",
-        "body": "Dear user, immediate action required. Verify your SSN and credit card here: http://10.0.0.1/verify",
-        "links": ["http://10.0.0.1/verify"]
+        "sender": "security@example.com",
+        "subject": "Hello there",
+        "body": "This is a test email body.",
     }
-    response = client.post("/api/v1/analyze", json=payload)
+    response = client.post("/analyze-email", json=payload)
+    assert response.status_code == 200
+
+
+def test_analyze_email_response_structure():
+    payload = {
+        "sender": "Security Team <security@example.com>",
+        "subject": "Verify your account",
+        "body": "Please visit https://example.com/verify to continue.",
+    }
+    response = client.post("/analyze-email", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["is_phishing"] is True
-    assert data["risk_score"] > 50.0
-    assert "CRITICAL" in data["risk_level"] or "HIGH" in data["risk_level"]
-    assert len(data["flagged_reasons"]) > 0
 
-def test_analyze_legitimate_email():
+    # Verify both parsed email and sender analysis sections exist
+    assert "email" in data
+    assert "sender_analysis" in data
+
+    # Verify email component
+    email_data = data["email"]
+    assert email_data["sender"] == "Security Team <security@example.com>"
+    assert email_data["subject"] == "Verify your account"
+    assert email_data["body"] == "Please visit https://example.com/verify to continue."
+    assert email_data["urls"] == ["https://example.com/verify"]
+    assert email_data["attachments"] == []
+
+    # Verify sender analysis component
+    sender_analysis = data["sender_analysis"]
+    assert sender_analysis["sender"] == "security@example.com"
+    assert sender_analysis["domain"] == "example.com"
+    assert sender_analysis["display_name"] == "Security Team"
+    assert sender_analysis["sender_risk_score"] == 0
+    assert sender_analysis["risk_factors"] == []
+    assert sender_analysis["warnings"] == []
+
+
+def test_analyze_email_suspicious_sender_pipeline():
     payload = {
-        "subject": "Sprint retrospective minutes",
-        "sender": "jordan@mycompany.com",
-        "reply_to": "jordan@mycompany.com",
-        "body": "Hi team, thanks for a great sprint! Please check the notes on Jira.",
-        "links": ["https://jira.mycompany.com/browse/PROJ-123"]
+        "sender": "PayPal Alert <admin@192.168.1.1>",
+        "subject": "Suspicious login",
+        "body": "Check http://192.168.1.1/login immediately.",
     }
-    response = client.post("/api/v1/analyze", json=payload)
+    response = client.post("/analyze-email", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["is_phishing"] is False
-    assert data["risk_score"] < 50.0
-    assert data["risk_level"] == "LOW"
+
+    assert data["email"]["urls"] == ["http://192.168.1.1/login"]
+    assert data["sender_analysis"]["domain"] == "192.168.1.1"
+    assert data["sender_analysis"]["sender_risk_score"] > 0
+    assert len(data["sender_analysis"]["risk_factors"]) > 0
+
+
+def test_analyze_email_missing_field_returns_422():
+    payload = {
+        "sender": "incomplete@example.com",
+    }
+    response = client.post("/analyze-email", json=payload)
+    assert response.status_code == 422
