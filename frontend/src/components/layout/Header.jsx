@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Menu,
   Search,
@@ -9,14 +9,16 @@ import {
   HelpCircle,
   Settings,
   Sparkles,
-  AlertCircle,
+  User,
+  LogOut,
+  CheckCircle2,
 } from 'lucide-react';
 import { IconButton } from '../common/IconButton';
 import { ThemeToggle } from '../common/ThemeToggle';
 import { Avatar } from '../common/Avatar';
 
 /**
- * Classical Gmail-style Header with live ML Backend Health Indicator
+ * Classical Gmail-style Header with live ML Backend Health Indicator & Profile Dropdown
  */
 export function Header({
   isSidebarCollapsed,
@@ -29,8 +31,27 @@ export function Header({
   isSecurityPanelOpen,
   onToggleSecurityPanel,
   backendHealth = {},
+  userSession = {},
+  onOpenSettings,
+  onOpenHelp,
+  onOpenNotifications,
+  onSignOut,
 }) {
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileRef = useRef(null);
+
   const isBackendReady = backendHealth.isOnline && backendHealth.modelLoaded;
+
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <header className="h-16 px-4 flex items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-none z-20">
@@ -129,15 +150,82 @@ export function Header({
         <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
 
         {/* Notifications */}
-        <IconButton icon={Bell} label="Notifications" size="md" />
+        <IconButton icon={Bell} label="Notifications" onClick={onOpenNotifications} size="md" />
 
         {/* Help & Settings */}
-        <IconButton icon={HelpCircle} label="Help & Documentation" size="md" className="hidden sm:inline-flex" />
-        <IconButton icon={Settings} label="Settings" size="md" className="hidden sm:inline-flex" />
+        <IconButton icon={HelpCircle} label="Help & Documentation" onClick={onOpenHelp} size="md" className="hidden sm:inline-flex" />
+        <IconButton icon={Settings} label="Settings" onClick={onOpenSettings} size="md" className="hidden sm:inline-flex" />
 
-        {/* User Profile Avatar */}
-        <div className="pl-1 border-l border-slate-200 dark:border-slate-800">
-          <Avatar name="Bhargav Mittapalli" size="md" />
+        {/* User Profile Avatar with Dropdown Menu */}
+        <div className="relative pl-1 border-l border-slate-200 dark:border-slate-800" ref={profileRef}>
+          <button
+            type="button"
+            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+            aria-label="User menu"
+            className="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <Avatar name={userSession.name || 'Bhargav Mittapalli'} size="md" />
+          </button>
+
+          {/* Profile Dropdown Menu */}
+          {isProfileMenuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-850 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-3 px-4 z-50 text-xs select-none">
+              <div className="pb-3 border-b border-slate-200 dark:border-slate-750">
+                <span className="font-bold text-sm block text-slate-900 dark:text-white">
+                  {userSession.name || 'Bhargav Mittapalli'}
+                </span>
+                <span className="text-slate-500 dark:text-slate-400 text-[11px] block truncate">
+                  {userSession.email || 'bhargav.mittapalli@company.com'}
+                </span>
+                <div className="mt-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-sky-950 text-blue-800 dark:text-sky-300 text-[10px] font-semibold w-max">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                  <span>Frontend Auth Shell</span>
+                </div>
+              </div>
+
+              <div className="py-2 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    onOpenSettings?.();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-750 transition-colors text-left font-medium"
+                >
+                  <Settings className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Settings & Preferences</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    onOpenHelp?.();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-750 transition-colors text-left font-medium"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Help & Documentation</span>
+                </button>
+              </div>
+
+              {onSignOut && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-750">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      onSignOut();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors text-left font-bold"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </header>

@@ -6,10 +6,14 @@ dist/
 build/
 
 # Byte-compiled / optimized / DLL files
-
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
 
 # C extensions
 *.so
@@ -59,4 +63,3 @@ data/*.parquet
 .idea/
 .DS_Store
 Thumbs.db
-

@@ -11,6 +11,7 @@ import {
   X,
   Loader2,
   ScanLine,
+  FilePlus,
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { getSecurityBadgeMeta } from '../../services/securityMapper';
@@ -30,6 +31,7 @@ export function SecurityContextSidePanel({
   selectedEmailAnalysis = {},
   onScanAll,
   isScanningAll = false,
+  onOpenCustomScan,
 }) {
   if (!isOpen) return null;
 
@@ -92,25 +94,38 @@ export function SecurityContextSidePanel({
           </div>
         </div>
 
-        {/* Scan All Button */}
-        <button
-          type="button"
-          disabled={isScanningAll}
-          onClick={onScanAll}
-          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm transition-colors disabled:opacity-60"
-        >
-          {isScanningAll ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Scanning All Mails...</span>
-            </>
-          ) : (
-            <>
-              <ScanLine className="w-3.5 h-3.5" />
-              <span>Scan Entire Inbox</span>
-            </>
+        {/* Action Buttons */}
+        <div className="mt-3 space-y-2">
+          <button
+            type="button"
+            disabled={isScanningAll}
+            onClick={onScanAll}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm transition-colors disabled:opacity-60"
+          >
+            {isScanningAll ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Scanning All Mails...</span>
+              </>
+            ) : (
+              <>
+                <ScanLine className="w-3.5 h-3.5" />
+                <span>Scan Entire Inbox</span>
+              </>
+            )}
+          </button>
+
+          {onOpenCustomScan && (
+            <button
+              type="button"
+              onClick={onOpenCustomScan}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs border border-slate-200 dark:border-slate-650 transition-colors"
+            >
+              <FilePlus className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Scan Custom Payload</span>
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Selected Email ML Breakdown Card */}

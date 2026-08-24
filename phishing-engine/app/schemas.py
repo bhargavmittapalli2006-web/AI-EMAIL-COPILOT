@@ -294,3 +294,64 @@ class ReplySuggestionsResponse(BaseModel):
         description="Source of replies: 'gemini', 'fallback', or 'blocked'"
     )
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth & User Schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    email: str = Field(..., description="Work email address", json_schema_extra={"example": "secops@company.com"})
+    password: str = Field(..., description="Account password (min 6 chars)", json_schema_extra={"example": "SecurePass2026!"})
+    display_name: str = Field(..., description="User display name", json_schema_extra={"example": "Bhargav Mittapalli"})
+    role: Optional[str] = Field(default="SecOps Analyst", description="User role")
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., description="Work email address")
+    password: str = Field(..., description="Account password")
+
+
+class AuthResponse(BaseModel):
+    user_id: int
+    email: str
+    display_name: str
+    role: str
+    token: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    display_name: str
+    role: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Email Persistence Schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EmailCreateRequest(BaseModel):
+    subject: str
+    body: str
+    senderName: Optional[str] = None
+    senderEmail: Optional[str] = None
+    sender: Optional[str] = None
+    recipient: Optional[str] = "user@enterprise.com"
+    replyTo: Optional[str] = None
+    reply_to: Optional[str] = None
+    links: Optional[List[str]] = Field(default_factory=list)
+    folder: Optional[str] = "inbox"
+    category: Optional[str] = "work"
+    isUnread: Optional[bool] = True
+    isStarred: Optional[bool] = False
+    isImportant: Optional[bool] = False
+    hasAttachment: Optional[bool] = False
+
+
+class EmailUpdateRequest(BaseModel):
+    folder: Optional[str] = None
+    isUnread: Optional[bool] = None
+    isStarred: Optional[bool] = None
+    isImportant: Optional[bool] = None
+
+

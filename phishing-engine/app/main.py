@@ -1,8 +1,10 @@
 import logging
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, status
+from typing import Optional, List, Dict, Any
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.database import init_db
+from app import auth_service, email_service
 from app.schemas import (
     EmailRequest,
     HealthResponse,
@@ -14,6 +16,12 @@ from app.schemas import (
     EmailIntelligenceResponse,
     ReplySuggestionsRequest,
     ReplySuggestionsResponse,
+    RegisterRequest,
+    LoginRequest,
+    AuthResponse,
+    UserResponse,
+    EmailCreateRequest,
+    EmailUpdateRequest,
 )
 from app.services.email_parser import EmailParser
 from app.services.sender_analyzer import SenderAnalyzer
@@ -58,10 +66,18 @@ tags_metadata = [
 ]
 
 
+from contextlib import asynccontextmanager
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup validation and shutdown events."""
+    """Lifespan context manager for startup validation, database initialization, and shutdown events."""
     logger.info("Initializing AI Email Copilot - Phishing Engine microservice...")
+    try:
+        init_db()
+    except Exception as e:
+        logger.error("Failed to initialize SQLite database: %s", e)
+
     if phishing_service.is_ready():
         logger.info("Validated model pipeline verified successfully. Loaded from: %s", phishing_service.get_model_path())
     else:
@@ -279,3 +295,131 @@ def generate_reply_suggestions(request: ReplySuggestionsRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Reply suggestions generation failed: {str(e)}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Real Authentication Endpoints (/api/v1/auth)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/api/v1/auth/register",
+    response_model=AuthResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Authentication"],
+    summary="Register a new user account"
+)
+def register_user(request: RegisterRequest):
+    return auth_service.register_user(
+        email=request.email,
+        password=request.password,
+        display_name=request.display_name,
+        role=request.role or "SecOps Analyst"
+    )
+
+
+@app.post(
+    "/api/v1/auth/login",
+    response_model=AuthResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Authentication"],
+    summary="Authenticate user and generate session token"
+)
+def login_user(request: LoginRequest):
+    return auth_service.authenticate_user(
+        email=request.email,
+        password=request.password
+    )
+
+
+@app.post(
+    "/api/v1/auth/logout",
+    status_code=status.HTTP_200_OK,
+    tags=["Authentication"],
+    summary="Invalidate user authentication session"
+)
+def logout_user():
+    return {"message": "Session logged out successfully."}
+
+
+@app.get(
+    "/api/v1/auth/me",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Authentication"],
+    summary="Get current authenticated user details"
+)
+def get_current_user_profile(current_user: Dict[str, Any] = Depends(auth_service.get_current_user)):
+    return UserResponse(
+        id=current_user["id"],
+        email=current_user["email"],
+        display_name=current_user["display_name"],
+        role=current_user["role"]
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Email Persistence Endpoints (/api/v1/emails)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/emails",
+    tags=["Emails"],
+    summary="Get user emails with strict user isolation"
+)
+def get_emails(
+    folder: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    return email_service.get_user_emails(user_id=current_user["id"], folder=folder)
+
+
+@app.get(
+    "/api/v1/emails/{id}",
+    tags=["Emails"],
+    summary="Get specific email by ID with strict user isolation"
+)
+def get_email_by_id(
+    id: str,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    return email_service.get_email_by_id(user_id=current_user["id"], email_id=id)
+
+
+@app.post(
+    "/api/v1/emails",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Emails"],
+    summary="Create and persist a new email"
+)
+def create_email(
+    request: EmailCreateRequest,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    return email_service.create_email(user_id=current_user["id"], data=request.model_dump())
+
+
+@app.patch(
+    "/api/v1/emails/{id}",
+    tags=["Emails"],
+    summary="Update folder, read, star, or important status for an email"
+)
+def update_email(
+    id: str,
+    request: EmailUpdateRequest,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    return email_service.update_email(user_id=current_user["id"], email_id=id, updates=request.model_dump(exclude_unset=True))
+
+
+@app.delete(
+    "/api/v1/emails/{id}",
+    tags=["Emails"],
+    summary="Delete an email"
+)
+def delete_email(
+    id: str,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    success = email_service.delete_email(user_id=current_user["id"], email_id=id)
+    return {"message": "Email deleted successfully.", "success": success}
+

@@ -5,19 +5,40 @@ import { Toolbar } from './components/layout/Toolbar';
 import { EmailList } from './components/email/EmailList';
 import { EmailDetail } from './components/email/EmailDetail';
 import { SecurityContextSidePanel } from './components/email/SecurityContextSidePanel';
+import { ComposeModal } from './components/modals/ComposeModal';
+import { ScanCustomEmailModal } from './components/modals/ScanCustomEmailModal';
+import { SettingsModal } from './components/modals/SettingsModal';
+import { HelpModal } from './components/modals/HelpModal';
+import { Login } from './pages/Login';
 import { MOCK_EMAILS, FOLDERS } from './data/mockInboxData';
 import { checkBackendHealth, analyzeEmailWithML } from './services/phishingService';
 import { fetchEmailIntelligence } from './services/geminiService';
 import { fetchReplySuggestions } from './services/replyService';
+import { authService } from './services/authService';
+
 
 /**
- * AI Email Copilot — Complete Phase 4 Integration:
- * - Phase 1: Classical Gmail-Style Frontend Shell
+ * AI Email Copilot — Complete Phase 12 Application Coordinator:
+ * - Entry / Login Experience & Session State (Frontend Auth Shell)
+ * - Navigation, Search, Folders & Settings
  * - Phase 2: Real ML-10 Scanner Integration
  * - Phase 3: Real ML-11 Gemini Email Intelligence
  * - Phase 4: Real ML-12 AI Reply Suggestions + Security Gate
  */
 export function App() {
+  // Frontend Session State (Persisted in localStorage)
+  const [userSession, setUserSession] = useState(() => {
+    const savedSession = localStorage.getItem('ai_email_copilot_session');
+    if (savedSession) {
+      try {
+        return JSON.parse(savedSession);
+      } catch (_) {}
+    }
+    return null;
+  });
+
+  const isAuthenticated = Boolean(userSession);
+
   // Theme state persisted in localStorage
   const [isDark, setIsDark] = useState(() => {
     const savedTheme = localStorage.getItem('ai_email_copilot_theme');
@@ -32,9 +53,13 @@ export function App() {
   const [selectedEmailId, setSelectedEmailId] = useState(null);
   const [selectedEmailIds, setSelectedEmailIds] = useState([]);
 
-  // Sidebar & Security Context Panel toggle states
+  // Sidebar, Modal & Security Context Panel toggle states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSecurityPanelOpen, setIsSecurityPanelOpen] = useState(false);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [isCustomScanOpen, setIsCustomScanOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Email Presentation fixtures
   const [emails, setEmails] = useState(MOCK_EMAILS);
@@ -72,6 +97,22 @@ export function App() {
 
   const toggleTheme = () => setIsDark((prev) => !prev);
 
+  // Auth actions
+  const handleLoginSuccess = (sessionData) => {
+    const session = {
+      ...sessionData,
+      authenticatedAt: new Date().toISOString(),
+    };
+    setUserSession(session);
+    localStorage.setItem('ai_email_copilot_session', JSON.stringify(session));
+  };
+
+  const handleSignOut = () => {
+    setUserSession(null);
+    localStorage.removeItem('ai_email_copilot_session');
+    setSelectedEmailId(null);
+  };
+
   // Probe Backend Health on Mount & recurring interval
   const probeHealth = useCallback(async () => {
     const health = await checkBackendHealth();
@@ -83,6 +124,22 @@ export function App() {
     const interval = setInterval(probeHealth, 20000);
     return () => clearInterval(interval);
   }, [probeHealth]);
+
+  // Synchronize emails from backend database when user session is active
+  useEffect(() => {
+    if (userSession?.token) {
+      authService
+        .getEmails(userSession.token)
+        .then((remoteEmails) => {
+          if (Array.isArray(remoteEmails) && remoteEmails.length > 0) {
+            setEmails(remoteEmails);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not load remote emails, using local cache:', err);
+        });
+    }
+  }, [userSession?.token]);
 
   /**
    * Triggers real Gemini intelligence for an email
@@ -205,6 +262,10 @@ export function App() {
       prev.map((e) => (e.id === emailId ? { ...e, isUnread: false } : e))
     );
 
+    if (userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { isUnread: false }).catch(() => {});
+    }
+
     const targetEmail = emails.find((e) => e.id === emailId);
     if (targetEmail) {
       const existingScan = analysisMap[emailId];
@@ -222,9 +283,107 @@ export function App() {
         }
       }
     }
-  }, [emails, analysisMap, intelligenceMap, replyMap, triggerEmailScan, triggerEmailIntelligence, triggerEmailReplies]);
+  }, [emails, analysisMap, intelligenceMap, replyMap, userSession?.token, triggerEmailScan, triggerEmailIntelligence, triggerEmailReplies]);
 
-  // Filtered emails based on folder and search query
+  /**
+   * Handles custom payload submission from ScanCustomEmailModal
+   */
+  const handleCustomScanSubmit = async (customPayload) => {
+    const customId = `custom-msg-${Date.now()}`;
+    const newCustomEmail = {
+      id: customId,
+      senderName: customPayload.sender.split('@')[0] || 'Custom Sender',
+      senderEmail: customPayload.sender,
+      recipient: 'user@enterprise.com',
+      replyTo: customPayload.reply_to || customPayload.sender,
+      subject: customPayload.subject,
+      preview: customPayload.body.substring(0, 90) + '...',
+      body: customPayload.body,
+      links: customPayload.links || [],
+      timestamp: 'Just Now',
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      isUnread: false,
+      isStarred: false,
+      isImportant: true,
+      folder: 'inbox',
+      category: 'work',
+      hasAttachment: false,
+      avatarColor: 'bg-indigo-600',
+    };
+
+    setEmails((prev) => [newCustomEmail, ...prev]);
+    setSelectedEmailId(customId);
+
+    if (userSession?.token) {
+      authService.createEmail(userSession.token, newCustomEmail).catch(() => {});
+    }
+
+    await triggerEmailScan(newCustomEmail);
+  };
+
+  /**
+   * Compose actions: Send & Save Draft
+   */
+  const handleSendCompose = (data) => {
+    const sentId = `sent-${Date.now()}`;
+    const newSentEmail = {
+      id: sentId,
+      senderName: 'Me (You)',
+      senderEmail: userSession?.email || 'user@enterprise.com',
+      recipient: data.recipient,
+      replyTo: userSession?.email || 'user@enterprise.com',
+      subject: data.subject,
+      preview: data.body.substring(0, 90) + '...',
+      body: data.body,
+      links: [],
+      timestamp: 'Just Now',
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      isUnread: false,
+      isStarred: false,
+      isImportant: false,
+      folder: 'sent',
+      category: 'work',
+      hasAttachment: false,
+      avatarColor: 'bg-blue-600',
+    };
+    setEmails((prev) => [newSentEmail, ...prev]);
+
+    if (userSession?.token) {
+      authService.createEmail(userSession.token, newSentEmail).catch(() => {});
+    }
+  };
+
+  const handleSaveDraftCompose = (data) => {
+    const draftId = `draft-${Date.now()}`;
+    const newDraftEmail = {
+      id: draftId,
+      senderName: 'Draft',
+      senderEmail: userSession?.email || 'user@enterprise.com',
+      recipient: data.recipient || 'Draft',
+      replyTo: userSession?.email || 'user@enterprise.com',
+      subject: data.subject || '(No Subject)',
+      preview: data.body.substring(0, 90) + '...',
+      body: data.body,
+      links: [],
+      timestamp: 'Just Now',
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      isUnread: false,
+      isStarred: false,
+      isImportant: false,
+      folder: 'drafts',
+      category: 'work',
+      hasAttachment: false,
+      avatarColor: 'bg-slate-600',
+    };
+    setEmails((prev) => [newDraftEmail, ...prev]);
+
+    if (userSession?.token) {
+      authService.createEmail(userSession.token, newDraftEmail).catch(() => {});
+    }
+  };
+
+
+  // Filtered emails based on folder, category tabs, and search query
   const filteredEmails = useMemo(() => {
     return emails.filter((email) => {
       const analysis = analysisMap[email.id]?.data;
@@ -232,6 +391,8 @@ export function App() {
       // Folder filtering
       if (activeFolder === 'starred' && !email.isStarred) return false;
       if (activeFolder === 'important' && !email.isImportant) return false;
+      if (activeFolder === 'sent' && email.folder !== 'sent') return false;
+      if (activeFolder === 'drafts' && email.folder !== 'drafts') return false;
 
       // Security folders filtered strictly on real ML results
       if (activeFolder === 'threats') {
@@ -252,10 +413,12 @@ export function App() {
       if (activeFolder === 'finance' && email.category !== 'finance') return false;
       if (activeFolder === 'updates' && email.category !== 'updates') return false;
       if (activeFolder === 'personal' && email.category !== 'personal') return false;
-      if (activeFolder === 'inbox' && email.folder === 'spam') return false;
-      if (activeFolder === 'inbox' && email.folder === 'trash') return false;
 
-      // Category tab filtering (when in primary folder)
+      if (activeFolder === 'inbox' && (email.folder === 'spam' || email.folder === 'trash' || email.folder === 'sent' || email.folder === 'drafts')) {
+        return false;
+      }
+
+      // Category tab filtering (when in primary folder view)
       if (activeFolder === 'inbox') {
         if (activeCategory === 'work' && email.category !== 'work') return false;
         if (activeCategory === 'finance' && email.category !== 'finance') return false;
@@ -322,6 +485,9 @@ export function App() {
     setActiveFolder(folderId);
     setSelectedEmailId(null);
     setSelectedEmailIds([]);
+    if (folderId === 'security-overview') {
+      setIsSecurityPanelOpen(true);
+    }
   };
 
   const handleBackToList = () => {
@@ -329,24 +495,39 @@ export function App() {
   };
 
   const handleToggleStar = (emailId) => {
+    const target = emails.find((e) => e.id === emailId);
+    if (target && userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { isStarred: !target.isStarred }).catch(() => {});
+    }
     setEmails((prev) =>
       prev.map((e) => (e.id === emailId ? { ...e, isStarred: !e.isStarred } : e))
     );
   };
 
   const handleToggleImportant = (emailId) => {
+    const target = emails.find((e) => e.id === emailId);
+    if (target && userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { isImportant: !target.isImportant }).catch(() => {});
+    }
     setEmails((prev) =>
       prev.map((e) => (e.id === emailId ? { ...e, isImportant: !e.isImportant } : e))
     );
   };
 
   const handleToggleRead = (emailId) => {
+    const target = emails.find((e) => e.id === emailId);
+    if (target && userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { isUnread: !target.isUnread }).catch(() => {});
+    }
     setEmails((prev) =>
       prev.map((e) => (e.id === emailId ? { ...e, isUnread: !e.isUnread } : e))
     );
   };
 
   const handleDeleteEmail = (emailId) => {
+    if (userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { folder: 'trash' }).catch(() => {});
+    }
     setEmails((prev) =>
       prev.map((e) => (e.id === emailId ? { ...e, folder: 'trash' } : e))
     );
@@ -356,6 +537,9 @@ export function App() {
   };
 
   const handleArchiveEmail = (emailId) => {
+    if (userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { folder: 'archive' }).catch(() => {});
+    }
     setEmails((prev) =>
       prev.map((e) => (e.id === emailId ? { ...e, folder: 'archive' } : e))
     );
@@ -365,6 +549,9 @@ export function App() {
   };
 
   const handleSpamEmail = (emailId) => {
+    if (userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { folder: 'spam' }).catch(() => {});
+    }
     setEmails((prev) =>
       prev.map((e) => (e.id === emailId ? { ...e, folder: 'spam' } : e))
     );
@@ -401,6 +588,11 @@ export function App() {
   };
 
   const handleBatchDelete = () => {
+    if (userSession?.token) {
+      selectedEmailIds.forEach((id) => {
+        authService.updateEmail(userSession.token, id, { folder: 'trash' }).catch(() => {});
+      });
+    }
     setEmails((prev) =>
       prev.map((e) => (selectedEmailIds.includes(e.id) ? { ...e, folder: 'trash' } : e))
     );
@@ -408,6 +600,11 @@ export function App() {
   };
 
   const handleBatchArchive = () => {
+    if (userSession?.token) {
+      selectedEmailIds.forEach((id) => {
+        authService.updateEmail(userSession.token, id, { folder: 'archive' }).catch(() => {});
+      });
+    }
     setEmails((prev) =>
       prev.map((e) => (selectedEmailIds.includes(e.id) ? { ...e, folder: 'archive' } : e))
     );
@@ -415,6 +612,11 @@ export function App() {
   };
 
   const handleBatchSpam = () => {
+    if (userSession?.token) {
+      selectedEmailIds.forEach((id) => {
+        authService.updateEmail(userSession.token, id, { folder: 'spam' }).catch(() => {});
+      });
+    }
     setEmails((prev) =>
       prev.map((e) => (selectedEmailIds.includes(e.id) ? { ...e, folder: 'spam' } : e))
     );
@@ -422,6 +624,11 @@ export function App() {
   };
 
   const handleBatchMarkRead = () => {
+    if (userSession?.token) {
+      selectedEmailIds.forEach((id) => {
+        authService.updateEmail(userSession.token, id, { isUnread: false }).catch(() => {});
+      });
+    }
     setEmails((prev) =>
       prev.map((e) => (selectedEmailIds.includes(e.id) ? { ...e, isUnread: false } : e))
     );
@@ -429,11 +636,29 @@ export function App() {
   };
 
   const handleBatchMarkUnread = () => {
+    if (userSession?.token) {
+      selectedEmailIds.forEach((id) => {
+        authService.updateEmail(userSession.token, id, { isUnread: true }).catch(() => {});
+      });
+    }
     setEmails((prev) =>
       prev.map((e) => (selectedEmailIds.includes(e.id) ? { ...e, isUnread: true } : e))
     );
     setSelectedEmailIds([]);
   };
+
+
+  // If not authenticated, render Animated Entry / Login Page
+  if (!isAuthenticated) {
+    return (
+      <Login
+        onLoginSuccess={handleLoginSuccess}
+        onNavigateLanding={() => {}}
+        theme={isDark ? 'dark' : 'light'}
+        onToggleTheme={toggleTheme}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#F6F8FC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden select-none">
@@ -449,6 +674,11 @@ export function App() {
         isSecurityPanelOpen={isSecurityPanelOpen}
         onToggleSecurityPanel={() => setIsSecurityPanelOpen((prev) => !prev)}
         backendHealth={backendHealth}
+        userSession={userSession}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenNotifications={() => setIsSecurityPanelOpen(true)}
+        onSignOut={handleSignOut}
       />
 
       {/* Main App Body: Sidebar + Main Content Container */}
@@ -460,7 +690,7 @@ export function App() {
           isCollapsed={isSidebarCollapsed}
           unreadCount={unreadCount}
           threatCount={realThreatCount}
-          onCompose={() => alert('Compose feature available in full messaging suite')}
+          onCompose={() => setIsComposeOpen(true)}
         />
 
         {/* Center Content Container (Rounded Card Canvas) */}
@@ -538,8 +768,41 @@ export function App() {
           selectedEmailAnalysis={selectedEmailId ? analysisMap[selectedEmailId] : {}}
           onScanAll={handleScanAll}
           isScanningAll={isScanningAll}
+          onOpenCustomScan={() => setIsCustomScanOpen(true)}
         />
       </div>
+
+      {/* Compose Email Dialog Modal */}
+      <ComposeModal
+        isOpen={isComposeOpen}
+        onClose={() => setIsComposeOpen(false)}
+        onSend={handleSendCompose}
+        onSaveDraft={handleSaveDraftCompose}
+      />
+
+      {/* Scan Custom Payload Modal */}
+      <ScanCustomEmailModal
+        isOpen={isCustomScanOpen}
+        onClose={() => setIsCustomScanOpen(false)}
+        onAnalyze={handleCustomScanSubmit}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        isDark={isDark}
+        onToggleTheme={toggleTheme}
+        backendHealth={backendHealth}
+        userSession={userSession || {}}
+        onSignOut={handleSignOut}
+      />
+
+      {/* Help Modal */}
+      <HelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+      />
     </div>
   );
 }
