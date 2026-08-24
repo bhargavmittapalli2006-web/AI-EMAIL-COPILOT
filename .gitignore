@@ -1,41 +1,62 @@
-# Python
+# Node modules & frontend builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+build/
+
+# Byte-compiled / optimized / DLL files
+
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
 venv/
-.env/
 .venv/
+ENV/
+env/
 
-# IDE
+# Datasets and large files
+data/*.csv
+data/*.json
+data/*.parquet
+!data/.gitkeep
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Saved Models
+!saved_models/*.pkl
+!saved_models/*.json
+!saved_models/*.joblib
+
+# IDE & OS files
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
-
-# Testing
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-
-# Byte-compiled
-*.pyc
-
-# Saved models (tracked selectively)
-# phishing-engine/saved_models/
-
-# Misc
-*.log

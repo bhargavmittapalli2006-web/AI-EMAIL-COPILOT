@@ -6,9 +6,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from ml.features import FeatureExtractor
 
+
 @pytest.fixture
 def extractor():
     return FeatureExtractor()
+
 
 def test_ip_link_detection(extractor):
     res = extractor.extract_features(
@@ -20,6 +22,7 @@ def test_ip_link_detection(extractor):
     assert res["features"]["has_ip_url"] == 1
     assert any("raw IP" in r for r in res["flagged_reasons"])
 
+
 def test_url_shortener_detection(extractor):
     res = extractor.extract_features(
         subject="Check this link",
@@ -30,6 +33,7 @@ def test_url_shortener_detection(extractor):
     assert res["features"]["has_shortener"] == 1
     assert any("URL shorteners" in r for r in res["flagged_reasons"])
 
+
 def test_sender_replyto_mismatch(extractor):
     res = extractor.extract_features(
         subject="Meeting",
@@ -39,6 +43,20 @@ def test_sender_replyto_mismatch(extractor):
     )
     assert res["features"]["sender_replyto_mismatch"] == 1
     assert any("does not match Reply-To domain" in r for r in res["flagged_reasons"])
+
+
+def test_brand_impersonation_and_urgency(extractor):
+    res = extractor.extract_features(
+        subject="URGENT: Verify your PayPal account immediately",
+        sender="paypal-support@security-update.xyz",
+        reply_to="collector@gmail.com",
+        body="Your account will be suspended within 24 hours. Re-enter your banking credentials now."
+    )
+    assert res["features"]["suspicious_brand_impersonation"] == 1
+    assert res["features"]["urgent_word_count"] >= 1
+    assert res["features"]["sensitive_word_count"] >= 1
+    assert any("urgent" in r.lower() or "urgency" in r.lower() for r in res["flagged_reasons"])
+
 
 def test_clean_legitimate_email(extractor):
     res = extractor.extract_features(

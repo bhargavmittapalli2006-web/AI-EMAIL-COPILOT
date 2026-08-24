@@ -134,6 +134,24 @@ SAMPLE_EMAILS = [
     }
 ]
 
+import os
+
 def get_sample_dataset() -> pd.DataFrame:
-    """Returns a pandas DataFrame containing sample email data for training/evaluation."""
+    """Returns a pandas DataFrame containing email data for training/evaluation."""
+    candidate_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "processed", "cleaned_emails.csv")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "processed", "cleaned_emails.csv")),
+        os.path.join("data", "processed", "cleaned_emails.csv"),
+    ]
+    for p in candidate_paths:
+        if os.path.exists(p):
+            try:
+                df = pd.read_csv(p)
+                if "body" in df.columns and "subject" in df.columns:
+                    if "is_phishing" not in df.columns and "label" in df.columns:
+                        df["is_phishing"] = df["label"]
+                    return df
+            except Exception:
+                pass
     return pd.DataFrame(SAMPLE_EMAILS)
+
