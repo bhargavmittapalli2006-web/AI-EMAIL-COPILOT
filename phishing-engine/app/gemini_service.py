@@ -123,7 +123,60 @@ class GeminiService:
     def generate_intelligence(self, request: EmailIntelligenceRequest) -> EmailIntelligenceResponse:
         """
         Generates structured email intelligence combining email content and authoritative phishing analysis.
+        Strictly overrides client-provided threat metadata and fails-closed if analysis fails.
         """
+        # 1. Authoritative Server-Side Security Verification
+        try:
+            from app.services.email_parser import EmailParser
+            from app.services.phishing_service import phishing_service
+            from app.schemas import EmailAnalysisRequest
+
+            # Parse email to safely extract URLs from the body
+            parser = EmailParser()
+            parsed_email = parser.parse(
+                sender=request.sender,
+                subject=request.subject,
+                body=request.body
+            )
+
+            analysis_req = EmailAnalysisRequest(
+                subject=request.subject,
+                sender=request.sender,
+                body=request.body,
+                reply_to=request.reply_to or "",
+                links=parsed_email.urls or []
+            )
+
+            analysis = phishing_service.analyze_email(analysis_req)
+            server_is_phishing = analysis.is_phishing
+            server_risk_level = str(analysis.risk_level.value if hasattr(analysis.risk_level, 'value') else analysis.risk_level).upper()
+            server_risk_score = analysis.risk_score
+            server_flagged_reasons = analysis.flagged_reasons
+
+        except Exception as e:
+            logger.error("Authoritative server-side phishing analysis failed: %s", e)
+            # Fail-closed: do not trust request metadata, do not call Gemini, raise RuntimeError
+            raise RuntimeError("Security analysis failed. Intelligence generation blocked.")
+
+        # Force override client-provided fields to prevent tampering
+        request.is_phishing = server_is_phishing
+        request.risk_level = server_risk_level
+        request.risk_score = server_risk_score
+        request.flagged_reasons = server_flagged_reasons
+
+        # 2. SECURITY GATE: Block live Gemini API call on phishing/high/critical threats
+        is_threat = (
+            server_is_phishing is True or
+            server_risk_level in ["HIGH", "CRITICAL"] or
+            server_risk_score >= 50.0
+        )
+
+        if is_threat:
+            logger.info("Security Gate: Blocked Gemini API call for suspicious email (Risk: %s, Score: %s)", server_risk_level, server_risk_score)
+            # Return safe, local, deterministic intelligence response WITHOUT calling Gemini API
+            return self._generate_fallback_intelligence(request)
+
+        # 3. For SAFE emails:
         # Re-check key in case environment was updated at runtime
         if not self.client and os.getenv("GEMINI_API_KEY"):
             self._init_client()
