@@ -46,11 +46,12 @@ def test_analyze_email_response_structure():
     assert response.status_code == 200
     data = response.json()
 
-    # Verify parsed email, sender analysis, URL analysis, and content analysis sections exist
+    # Verify parsed email, sender analysis, URL analysis, content analysis, and features exist
     assert "email" in data
     assert "sender_analysis" in data
     assert "url_analysis" in data
     assert "content_analysis" in data
+    assert "features" in data
 
     # Verify email component
     email_data = data["email"]
@@ -83,6 +84,14 @@ def test_analyze_email_response_structure():
     assert "signals" in content_analysis
     assert "text_characteristics" in content_analysis
 
+    # Verify ML-ready features component
+    features = data["features"]
+    assert features["url_count"] == 1
+    assert features["https_url_count"] == 1
+    assert features["http_url_count"] == 0
+    assert "sender_risk_score" in features
+    assert "content_risk_score" in features
+
 
 def test_analyze_email_suspicious_sender_pipeline():
     payload = {
@@ -113,6 +122,13 @@ def test_analyze_email_suspicious_sender_pipeline():
     content_result = data["content_analysis"]
     assert content_result["content_risk_score"] > 0
     assert len(content_result["signals"]) > 0
+
+    # Verify features reflect suspicious signals
+    assert "features" in data
+    features = data["features"]
+    assert features["sender_is_ip"] == 1
+    assert features["ip_url_count"] == 1
+    assert features["urgency_detected"] == 1
 
 
 def test_analyze_email_missing_field_returns_422():
