@@ -1,0 +1,57 @@
+{
+  "model_name": "Phishing Email Detection Pipeline",
+  "model_version": "2.0.0-genuine-phishing",
+  "dataset_name": "True Legitimate vs. Phishing Dataset (Nazario Phishing + Enron Ham)",
+  "dataset_source": "Jose Nazario Phishing Corpus & Enron Corporate Email Corpus",
+  "source_urls": [
+    "https://raw.githubusercontent.com/Bilal-73/Phishing-and-Spam-Detection/main/data/Nazario.csv",
+    "https://raw.githubusercontent.com/MWiechmann/enron_spam_data/master/enron_spam_data.zip"
+  ],
+  "training_date": "2026-08-24T12:14:28.929533+00:00",
+  "random_seed": 42,
+  "sample_counts": {
+    "total": 2000,
+    "training_samples": 1600,
+    "test_samples": 400,
+    "train_legitimate": 800,
+    "train_phishing": 800,
+    "test_legitimate": 200,
+    "test_phishing": 200
+  },
+  "class_distribution": {
+    "0": "legitimate (Enron corporate ham)",
+    "1": "phishing (Jose Nazario genuine attack corpus)"
+  },
+  "tfidf_configuration": {
+    "max_features": 15000,
+    "ngram_range": [
+      1,
+      2
+    ],
+    "sublinear_tf": true,
+    "strip_accents": "unicode",
+    "lowercase": true,
+    "stop_words": "english"
+  },
+  "logistic_regression_configuration": {
+    "penalty": "l2",
+    "C": 1.0,
+    "class_weight": "balanced",
+    "solver": "liblinear",
+    "max_iter": 1000,
+    "random_state": 42
+  },
+  "evaluation_metrics": {
+    "accuracy": 0.995,
+    "precision": 0.995,
+    "recall": 0.995,
+    "f1_score": 0.995,
+    "roc_auc": 0.9999
+  },
+  "data_leakage_checks": {
+    "stratified_split": true,
+    "train_test_overlap_count": 0,
+    "vectorizer_fitted_only_on_train": true,
+    "test_data_strictly_held_out": true
+  }
+}

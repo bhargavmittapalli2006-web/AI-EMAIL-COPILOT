@@ -1,5 +1,7 @@
 import os
 import sys
+import logging
+from typing import Optional
 
 # Ensure ml modules are discoverable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -8,25 +10,41 @@ from ml.model import PhishingModel
 from ml.dataset import get_sample_dataset
 from app.schemas import EmailAnalysisRequest, PhishingAnalysisResponse
 
-class PhishingService:
-    """Service layer for managing model inference and fallback initialization."""
+logger = logging.getLogger(__name__)
 
-    def __init__(self):
-        self.model = PhishingModel()
+
+class PhishingService:
+    """Production service layer orchestrating phishing model inference and validation."""
+
+    def __init__(self, model_path: Optional[str] = None):
+        self.model = PhishingModel(model_path=model_path)
         self._initialize_model()
 
     def _initialize_model(self):
-        """Loads serialized model or trains a fresh model if none exists."""
+        """Loads serialized pipeline or initializes fallback if not present."""
         loaded = self.model.load()
         if not loaded:
-            print("No saved model found. Training initial model from sample dataset...")
+            logger.warning("No pre-trained model found at default locations. Training fallback model...")
             df = get_sample_dataset()
-            self.model.train(df)
+            self.model.train_fallback_model(df)
             self.model.save()
-            print("Initial model trained and saved successfully.")
+            logger.info("Fallback model pipeline trained and saved successfully.")
+        else:
+            logger.info("Inference model ready from: %s", self.model.loaded_model_path)
+
+    def is_ready(self) -> bool:
+        """Returns True if model pipeline is loaded and ready for inference."""
+        return self.model.is_trained and (self.model.pipeline is not None)
+
+    def get_model_path(self) -> Optional[str]:
+        """Returns the active loaded model path."""
+        return self.model.loaded_model_path
 
     def analyze_email(self, request: EmailAnalysisRequest) -> PhishingAnalysisResponse:
-        """Runs security features extraction and ML prediction on an incoming email request."""
+        """Runs security feature extraction and ML prediction on an incoming email request."""
+        if not self.is_ready():
+            raise RuntimeError("Phishing inference model is not initialized or ready.")
+
         result = self.model.predict(
             subject=request.subject,
             sender=request.sender,
@@ -37,6 +55,7 @@ class PhishingService:
 
         return PhishingAnalysisResponse(
             is_phishing=result["is_phishing"],
+            classification=result["classification"],
             risk_score=result["risk_score"],
             risk_level=result["risk_level"],
             confidence=result["confidence"],
@@ -44,5 +63,6 @@ class PhishingService:
             features=result["features"]
         )
 
-# Global service instance
+
+# Global service singleton instance
 phishing_service = PhishingService()

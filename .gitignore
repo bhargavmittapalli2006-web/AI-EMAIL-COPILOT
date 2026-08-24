@@ -1,4 +1,12 @@
+# Node modules & frontend builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+build/
+
 # Byte-compiled / optimized / DLL files
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -36,12 +44,19 @@ data/*.json
 data/*.parquet
 !data/.gitkeep
 
-# Saved Models (except gitkeep)
-phishing-engine/saved_models/*
-!phishing-engine/saved_models/.gitkeep
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Saved Models
+!saved_models/*.pkl
+!saved_models/*.json
+!saved_models/*.joblib
 
 # IDE & OS files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+

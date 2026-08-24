@@ -1,0 +1,13 @@
+subject,body,label
+"Team Meeting","Hi team, the project meeting is scheduled for tomorrow at 10 AM.",0
+"Project Update","Please review the latest project update and share your feedback.",0
+"Interview Confirmation","Your interview has been scheduled for Monday at 2 PM.",0
+"Invoice Received","Please review the attached invoice and contact us with questions.",0
+"Account Activity","We noticed a login from a new device. You can review your account activity.",0
+"Class Reminder","Your assignment is due next Friday. Please submit it through the portal.",0
+"Urgent Account Verification","Your account will be suspended. Verify immediately to avoid losing access.",1
+"Security Alert","Your password has expired. Confirm your credentials immediately.",1
+"Claim Your Reward","Congratulations! You have won a prize. Act now to claim your reward.",1
+"Account Suspended","Your account has been suspended. Verify your information immediately.",1
+"Urgent Action Required","Failure to act immediately will result in permanent account closure.",1
+"Payment Problem","Your payment failed. Update your banking information immediately to continue.",1
