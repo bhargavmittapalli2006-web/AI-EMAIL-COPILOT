@@ -46,10 +46,11 @@ def test_analyze_email_response_structure():
     assert response.status_code == 200
     data = response.json()
 
-    # Verify parsed email, sender analysis, and URL analysis sections exist
+    # Verify parsed email, sender analysis, URL analysis, and content analysis sections exist
     assert "email" in data
     assert "sender_analysis" in data
     assert "url_analysis" in data
+    assert "content_analysis" in data
 
     # Verify email component
     email_data = data["email"]
@@ -76,6 +77,12 @@ def test_analyze_email_response_structure():
     assert url_analysis[0]["is_ip_address"] is False
     assert url_analysis[0]["domain"] == "example.com"
 
+    # Verify Content analysis component
+    content_analysis = data["content_analysis"]
+    assert "content_risk_score" in content_analysis
+    assert "signals" in content_analysis
+    assert "text_characteristics" in content_analysis
+
 
 def test_analyze_email_suspicious_sender_pipeline():
     payload = {
@@ -100,6 +107,12 @@ def test_analyze_email_suspicious_sender_pipeline():
     assert url_result["uses_https"] is False
     assert url_result["url_risk_score"] > 0
     assert len(url_result["risk_factors"]) > 0
+
+    # Verify Content analysis for suspicious content
+    assert "content_analysis" in data
+    content_result = data["content_analysis"]
+    assert content_result["content_risk_score"] > 0
+    assert len(content_result["signals"]) > 0
 
 
 def test_analyze_email_missing_field_returns_422():

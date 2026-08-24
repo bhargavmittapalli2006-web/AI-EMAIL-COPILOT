@@ -3,16 +3,18 @@ from app.schemas import EmailRequest, HealthResponse, EmailAnalysisResponse
 from app.services.email_parser import EmailParser
 from app.services.sender_analyzer import SenderAnalyzer
 from app.services.url_analyzer import URLAnalyzer
+from app.services.content_analyzer import ContentAnalyzer
 
 app = FastAPI(
     title="AI Email Copilot — Phishing Engine",
     description="Security & Phishing detection microservice for AI Email Copilot.",
-    version="0.5.0",
+    version="0.6.0",
 )
 
 email_parser = EmailParser()
 sender_analyzer = SenderAnalyzer()
 url_analyzer = URLAnalyzer()
+content_analyzer = ContentAnalyzer()
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -27,8 +29,8 @@ def health_check():
 @app.post("/analyze-email", response_model=EmailAnalysisResponse, tags=["Analysis"])
 def analyze_email(request: EmailRequest) -> EmailAnalysisResponse:
     """
-    Parses an incoming email payload and performs safe sender and URL security analysis.
-    Returns the parsed email data, sender security signals, and URL security signals.
+    Parses an incoming email payload and performs safe sender, URL, and content security analysis.
+    Returns parsed email data, sender security signals, URL security signals, and content signals.
     """
     parsed_email = email_parser.parse(
         sender=request.sender,
@@ -40,8 +42,14 @@ def analyze_email(request: EmailRequest) -> EmailAnalysisResponse:
 
     url_results = url_analyzer.analyze_urls(parsed_email.urls)
 
+    content_result = content_analyzer.analyze(
+        subject=parsed_email.subject,
+        body=parsed_email.body,
+    )
+
     return EmailAnalysisResponse(
         email=parsed_email,
         sender_analysis=sender_result,
         url_analysis=url_results,
+        content_analysis=content_result,
     )

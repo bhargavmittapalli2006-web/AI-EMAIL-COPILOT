@@ -2,5 +2,14 @@
 from app.models.email_data import EmailData, AttachmentData
 from app.models.sender_analysis import SenderAnalysis
 from app.models.url_analysis import URLAnalysis
+from app.models.content_analysis import ContentAnalysis, ContentSignal, TextCharacteristics
 
-__all__ = ["EmailData", "AttachmentData", "SenderAnalysis", "URLAnalysis"]
+__all__ = [
+    "EmailData",
+    "AttachmentData",
+    "SenderAnalysis",
+    "URLAnalysis",
+    "ContentAnalysis",
+    "ContentSignal",
+    "TextCharacteristics",
+]

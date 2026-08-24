@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from app.models.email_data import EmailData, AttachmentData
 from app.models.sender_analysis import SenderAnalysis
 from app.models.url_analysis import URLAnalysis
+from app.models.content_analysis import ContentAnalysis
 
 
 class EmailRequest(BaseModel):
@@ -19,10 +20,11 @@ class HealthResponse(BaseModel):
 
 
 class EmailAnalysisResponse(BaseModel):
-    """Response model returned by /analyze-email containing parsed email, sender analysis, and URL analysis."""
+    """Response model returned by /analyze-email containing parsed email, sender analysis, URL analysis, and content analysis."""
     email: EmailData
     sender_analysis: SenderAnalysis
     url_analysis: List[URLAnalysis] = Field(default_factory=list)
+    content_analysis: ContentAnalysis
 
 
 # ML Service schemas for ML models
