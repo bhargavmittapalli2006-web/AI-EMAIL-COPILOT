@@ -22,7 +22,7 @@ const TIMEOUT_MS = 15000;
  * @param {Object} [analysis] - Authoritative ML-10 analysis output (optional hint)
  * @returns {Promise<Object>} Normalized intelligence response
  */
-export async function fetchEmailIntelligence(email = {}, analysis = null) {
+export async function fetchEmailIntelligence(email = {}, analysis = null, token = null) {
   const requestPayload = {
     subject: email.subject || '',
     sender: email.senderEmail || email.sender || '',
@@ -32,22 +32,29 @@ export async function fetchEmailIntelligence(email = {}, analysis = null) {
     risk_score: analysis && typeof analysis.risk_score === 'number' ? analysis.risk_score : null,
     risk_level: analysis?.risk_level ? String(analysis.risk_level).toUpperCase() : null,
     flagged_reasons: Array.isArray(analysis?.flagged_reasons) ? analysis.flagged_reasons : [],
+    ...(email.id ? { email_id: email.id } : {}),
   };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/v1/intelligence`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+      headers,
       body: JSON.stringify(requestPayload),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       let errorDetail = `HTTP ${response.status}: ${response.statusText}`;

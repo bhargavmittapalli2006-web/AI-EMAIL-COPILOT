@@ -77,6 +77,11 @@ class EmailAnalysisRequest(BaseModel):
         description="List of extracted hyperlink URLs contained within the email",
         json_schema_extra={"example": ["http://192.168.1.1/login", "http://bit.ly/bank-security"]}
     )
+    email_id: Optional[str] = Field(
+        default=None,
+        description="Optional email identifier for audit scan persistence"
+    )
+
 
     model_config = {
         "json_schema_extra": {
@@ -172,9 +177,11 @@ class EmailIntelligenceRequest(BaseModel):
     risk_score: Optional[float] = Field(default=None, description="Authoritative risk score (0-100)")
     risk_level: Optional[str] = Field(default=None, description="Authoritative risk level (LOW, MEDIUM, HIGH, CRITICAL)")
     flagged_reasons: Optional[List[str]] = Field(default_factory=list, description="Threat explanation flags from phishing engine")
+    email_id: Optional[str] = Field(default=None, description="Optional email identifier for intelligence persistence")
 
 
 class EmailIntelligenceResponse(BaseModel):
+
     summary: str = Field(
         ...,
         description="Concise 2-5 sentence AI-generated summary explaining what the email is about, what the sender wants, and key requests",
@@ -243,8 +250,10 @@ class ReplySuggestionsRequest(BaseModel):
     risk_score: Optional[float] = Field(default=None, description="Client or cached risk score (0-100)")
     risk_level: Optional[str] = Field(default=None, description="Risk level (LOW, MEDIUM, HIGH, CRITICAL)")
     links: Optional[List[str]] = Field(default_factory=list, description="Extracted hyperlink URLs")
+    email_id: Optional[str] = Field(default=None, description="Optional email identifier for reply suggestions persistence")
 
     model_config = {
+
         "json_schema_extra": {
             "examples": [
                 {
@@ -353,5 +362,41 @@ class EmailUpdateRequest(BaseModel):
     isUnread: Optional[bool] = None
     isStarred: Optional[bool] = None
     isImportant: Optional[bool] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Reminder Persistence Schemas (Phase 20)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ReminderCreateRequest(BaseModel):
+    title: str = Field(..., description="Reminder task or action item title", json_schema_extra={"example": "Submit review by Friday"})
+    email_id: Optional[str] = Field(default=None, description="Optional associated email ID")
+    action_item_id: Optional[str] = Field(default=None, description="Optional associated action item identifier")
+    description: Optional[str] = Field(default="", description="Detailed description or context")
+    due_at: Optional[str] = Field(default=None, description="Deadline timestamp or label")
+    priority: Optional[str] = Field(default="medium", description="Priority: low, medium, high")
+
+
+class ReminderUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_at: Optional[str] = None
+    priority: Optional[str] = None
+    completed: Optional[bool] = None
+
+
+class ReminderResponse(BaseModel):
+    id: str
+    user_id: int
+    email_id: Optional[str] = None
+    action_item_id: Optional[str] = None
+    title: str
+    description: Optional[str] = ""
+    due_at: Optional[str] = None
+    priority: str = "medium"
+    completed: bool = False
+    created_at: str
+    updated_at: str
+
 
 

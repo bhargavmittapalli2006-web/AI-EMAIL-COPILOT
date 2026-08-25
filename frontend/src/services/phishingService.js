@@ -80,29 +80,36 @@ export async function checkBackendHealth() {
  * @param {string[]} [email.links] - Extracted links
  * @returns {Promise<Object>} Real ML PhishingAnalysisResponse
  */
-export async function analyzeEmailWithML(email = {}) {
+export async function analyzeEmailWithML(email = {}, token = null) {
   const requestPayload = {
     subject: email.subject || '',
     sender: email.senderEmail || email.sender || '',
     body: email.body || '',
     reply_to: email.replyTo || email.reply_to || email.senderEmail || email.sender || '',
     links: email.links && email.links.length > 0 ? email.links : extractLinksFromText(email.body || ''),
+    ...(email.id ? { email_id: email.id } : {}),
   };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/v1/analyze`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+      headers,
       body: JSON.stringify(requestPayload),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+
 
     if (!response.ok) {
       let errorDetail = `HTTP ${response.status}: ${response.statusText}`;

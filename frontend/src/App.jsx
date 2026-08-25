@@ -9,7 +9,9 @@ import { ComposeModal } from './components/modals/ComposeModal';
 import { ScanCustomEmailModal } from './components/modals/ScanCustomEmailModal';
 import { SettingsModal } from './components/modals/SettingsModal';
 import { HelpModal } from './components/modals/HelpModal';
+import { NotificationCenter } from './components/modals/NotificationCenter';
 import { Login } from './pages/Login';
+
 import { MOCK_EMAILS, FOLDERS } from './data/mockInboxData';
 import { checkBackendHealth, analyzeEmailWithML } from './services/phishingService';
 import { fetchEmailIntelligence } from './services/geminiService';
@@ -56,10 +58,84 @@ export function App() {
   // Sidebar, Modal & Security Context Panel toggle states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSecurityPanelOpen, setIsSecurityPanelOpen] = useState(false);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [isCustomScanOpen, setIsCustomScanOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  // AI Privacy & Notification Settings
+  const [aiSettings, setAiSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ai_privacy_settings');
+      return saved ? JSON.parse(saved) : {
+        aiIntelligenceEnabled: true,
+        aiRepliesEnabled: true,
+        aiTriggerMode: 'auto',
+        notifyThreats: true,
+        notifyCritical: true,
+        notifyHigh: true,
+        notifyDeadlines: true,
+        notifyActionItems: true,
+        notifyDailyReport: false,
+      };
+    } catch {
+      return {
+        aiIntelligenceEnabled: true,
+        aiRepliesEnabled: true,
+        aiTriggerMode: 'auto',
+        notifyThreats: true,
+        notifyCritical: true,
+        notifyHigh: true,
+        notifyDeadlines: true,
+        notifyActionItems: true,
+        notifyDailyReport: false,
+      };
+    }
+  });
+
+  const handleUpdateAiSettings = (newSettings) => {
+    setAiSettings(newSettings);
+    try {
+      localStorage.setItem('ai_privacy_settings', JSON.stringify(newSettings));
+    } catch {}
+  };
+
+  // User Reminders with Database Persistence (Phase 20)
+  const [reminders, setReminders] = useState([]);
+
+  const handleSetReminder = async (reminderData) => {
+    const optimisticReminder = {
+      id: reminderData.id || `rem-${Date.now()}`,
+      email_id: reminderData.email_id || reminderData.emailId,
+      title: reminderData.title,
+      description: reminderData.description || '',
+      due_at: reminderData.due_at || reminderData.time || 'Upcoming',
+      priority: reminderData.priority || 'medium',
+      completed: false,
+      created_at: new Date().toISOString(),
+    };
+
+    setReminders((prev) => [optimisticReminder, ...prev.filter((r) => r.id !== optimisticReminder.id)]);
+
+    if (userSession?.token) {
+      try {
+        const saved = await authService.createReminder(userSession.token, {
+          email_id: reminderData.email_id || reminderData.emailId,
+          title: reminderData.title,
+          description: reminderData.description || '',
+          due_at: reminderData.due_at || reminderData.time || 'Upcoming',
+          priority: reminderData.priority || 'medium',
+        });
+        if (saved && saved.id) {
+          setReminders((prev) => [saved, ...prev.filter((r) => r.id !== optimisticReminder.id && r.id !== saved.id)]);
+        }
+      } catch (err) {
+        console.warn('Reminder persistence error:', err);
+      }
+    }
+  };
+
 
   // Email Presentation fixtures
   const [emails, setEmails] = useState(MOCK_EMAILS);
@@ -110,8 +186,11 @@ export function App() {
   const handleSignOut = () => {
     setUserSession(null);
     localStorage.removeItem('ai_email_copilot_session');
+    localStorage.removeItem('user_reminders');
+    setReminders([]);
     setSelectedEmailId(null);
   };
+
 
   // Centralized email refresh mechanism strictly synchronizing with backend database
   const refreshEmails = useCallback(async () => {
@@ -141,7 +220,7 @@ export function App() {
     return () => clearInterval(interval);
   }, [probeHealth]);
 
-  // Restore authenticated session & synchronize emails from database on mount / token change
+  // Restore authenticated session & synchronize emails + reminders from database on mount / token change
   useEffect(() => {
     if (userSession?.token) {
       authService
@@ -154,15 +233,21 @@ export function App() {
               name: userData.display_name || prev.name,
               role: userData.role || prev.role,
             }));
-            return authService.getEmails(userSession.token);
+            return Promise.all([
+              authService.getEmails(userSession.token),
+              authService.getReminders(userSession.token),
+            ]);
           } else {
             handleSignOut();
-            return null;
+            return [null, null];
           }
         })
-        .then((remoteEmails) => {
+        .then(([remoteEmails, remoteReminders]) => {
           if (Array.isArray(remoteEmails)) {
             setEmails(remoteEmails);
+          }
+          if (Array.isArray(remoteReminders)) {
+            setReminders(remoteReminders);
           }
         })
         .catch((err) => {
@@ -173,6 +258,7 @@ export function App() {
         });
     }
   }, [userSession?.token]);
+
 
 
   /**
@@ -187,7 +273,7 @@ export function App() {
     }));
 
     try {
-      const intelResult = await fetchEmailIntelligence(email, mlAnalysis);
+      const intelResult = await fetchEmailIntelligence(email, mlAnalysis, userSession?.token);
       setIntelligenceMap((prev) => ({
         ...prev,
         [email.id]: {
@@ -204,7 +290,7 @@ export function App() {
         },
       }));
     }
-  }, []);
+  }, [userSession?.token]);
 
   /**
    * Triggers real AI reply suggestions for an email
@@ -218,7 +304,7 @@ export function App() {
     }));
 
     try {
-      const replyResult = await fetchReplySuggestions(email, mlAnalysis);
+      const replyResult = await fetchReplySuggestions(email, mlAnalysis, userSession?.token);
       setReplyMap((prev) => ({
         ...prev,
         [email.id]: {
@@ -235,7 +321,7 @@ export function App() {
         },
       }));
     }
-  }, []);
+  }, [userSession?.token]);
 
   /**
    * Triggers complete pipeline for a single email: ML-10 Scan -> Gemini Intel -> AI Replies
@@ -251,7 +337,7 @@ export function App() {
     let realMlResult = null;
 
     try {
-      realMlResult = await analyzeEmailWithML(email);
+      realMlResult = await analyzeEmailWithML(email, userSession?.token);
       setAnalysisMap((prev) => ({
         ...prev,
         [email.id]: {
@@ -269,12 +355,15 @@ export function App() {
       }));
     }
 
-    // Trigger downstream AI services with authoritative ML context
-    await Promise.all([
-      triggerEmailIntelligence(email, realMlResult),
-      triggerEmailReplies(email, realMlResult),
-    ]);
-  }, [triggerEmailIntelligence, triggerEmailReplies]);
+    // Trigger downstream AI services respecting AI privacy settings
+    if (aiSettings?.aiIntelligenceEnabled !== false && aiSettings?.aiTriggerMode !== 'manual') {
+      triggerEmailIntelligence(email, realMlResult);
+    }
+    if (aiSettings?.aiRepliesEnabled !== false) {
+      triggerEmailReplies(email, realMlResult);
+    }
+  }, [userSession?.token, aiSettings, triggerEmailIntelligence, triggerEmailReplies]);
+
 
   /**
    * Scans all emails in the inbox with real ML inference
@@ -309,15 +398,20 @@ export function App() {
       if (!existingScan || existingScan.status === 'idle' || existingScan.status === 'error') {
         triggerEmailScan(targetEmail);
       } else {
-        if (!existingIntel || existingIntel.status === 'idle' || existingIntel.status === 'error') {
-          triggerEmailIntelligence(targetEmail, existingScan.data || null);
+        if (aiSettings?.aiIntelligenceEnabled !== false && aiSettings?.aiTriggerMode !== 'manual') {
+          if (!existingIntel || existingIntel.status === 'idle' || existingIntel.status === 'error') {
+            triggerEmailIntelligence(targetEmail, existingScan.data || null);
+          }
         }
-        if (!existingReply || existingReply.status === 'idle' || existingReply.status === 'error') {
-          triggerEmailReplies(targetEmail, existingScan.data || null);
+        if (aiSettings?.aiRepliesEnabled !== false) {
+          if (!existingReply || existingReply.status === 'idle' || existingReply.status === 'error') {
+            triggerEmailReplies(targetEmail, existingScan.data || null);
+          }
         }
       }
     }
-  }, [emails, analysisMap, intelligenceMap, replyMap, userSession?.token, triggerEmailScan, triggerEmailIntelligence, triggerEmailReplies]);
+  }, [emails, analysisMap, intelligenceMap, replyMap, userSession?.token, aiSettings, triggerEmailScan, triggerEmailIntelligence, triggerEmailReplies]);
+
 
   /**
    * Handles custom payload submission from ScanCustomEmailModal
@@ -749,6 +843,25 @@ export function App() {
     );
   }
 
+  // Unread Notification Count
+  const unreadNotificationCount = useMemo(() => {
+    let count = 0;
+    try {
+      const readStored = localStorage.getItem('read_notifications');
+      const readSet = readStored ? new Set(JSON.parse(readStored)) : new Set();
+      for (const email of emails) {
+        const scan = analysisMap[email.id]?.data;
+        if (scan && (scan.is_phishing || scan.risk_level === 'HIGH')) {
+          if (!readSet.has(`sec-${email.id}`) && !readSet.has(`sec-high-${email.id}`)) count++;
+        }
+      }
+      for (const r of reminders) {
+        if (!readSet.has(`rem-${r.id}`)) count++;
+      }
+    } catch {}
+    return count;
+  }, [emails, analysisMap, reminders]);
+
   return (
     <div className="flex flex-col h-screen w-screen bg-[#F6F8FC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden select-none">
       {/* Top Application Header */}
@@ -766,7 +879,8 @@ export function App() {
         userSession={userSession}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenHelp={() => setIsHelpOpen(true)}
-        onOpenNotifications={() => setIsSecurityPanelOpen(true)}
+        onOpenNotifications={() => setIsNotificationCenterOpen(true)}
+        unreadNotificationCount={unreadNotificationCount}
         onSignOut={handleSignOut}
       />
 
@@ -815,9 +929,14 @@ export function App() {
               analysisState={analysisMap[selectedEmailId] || { status: 'idle' }}
               intelligenceState={intelligenceMap[selectedEmailId] || { status: 'idle' }}
               replyState={replyMap[selectedEmailId] || { status: 'idle' }}
+              aiSettings={aiSettings}
+              persistedReminders={reminders}
               onScanNow={() => triggerEmailScan(currentEmail)}
+              onRequestAiAnalysis={() => triggerEmailIntelligence(currentEmail, analysisMap[selectedEmailId]?.data || null)}
               onRetryIntelligence={() => triggerEmailIntelligence(currentEmail, analysisMap[selectedEmailId]?.data || null)}
               onRetryReply={() => triggerEmailReplies(currentEmail, analysisMap[selectedEmailId]?.data || null)}
+              onSetReminder={handleSetReminder}
+
               onBack={handleBackToList}
               onDelete={handleDeleteEmail}
               onArchive={handleArchiveEmail}
@@ -880,7 +999,19 @@ export function App() {
         onAnalyze={handleCustomScanSubmit}
       />
 
-      {/* Settings Modal */}
+      {/* Notification Center Modal (Part 10) */}
+      <NotificationCenter
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
+        emails={emails}
+        analysisMap={analysisMap}
+        intelligenceMap={intelligenceMap}
+        backendHealth={backendHealth}
+        reminders={reminders}
+        onSelectEmail={handleSelectEmail}
+      />
+
+      {/* Settings Modal with AI Privacy & Consent Controls (Part 11, 12, 13) */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -888,6 +1019,8 @@ export function App() {
         onToggleTheme={toggleTheme}
         backendHealth={backendHealth}
         userSession={userSession || {}}
+        aiSettings={aiSettings}
+        onUpdateAiSettings={handleUpdateAiSettings}
         onSignOut={handleSignOut}
       />
 
@@ -898,6 +1031,7 @@ export function App() {
       />
     </div>
   );
+
 }
 
 export default App;

@@ -22,7 +22,11 @@ from app.schemas import (
     UserResponse,
     EmailCreateRequest,
     EmailUpdateRequest,
+    ReminderCreateRequest,
+    ReminderUpdateRequest,
+    ReminderResponse,
 )
+
 from app.services.email_parser import EmailParser
 from app.services.sender_analyzer import SenderAnalyzer
 from app.services.url_analyzer import URLAnalyzer
@@ -112,10 +116,22 @@ An intelligent email security engine combining **Machine Learning (TF-IDF + Logi
     redoc_url="/redoc"
 )
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+
 # Enable CORS for frontend and microservice cross-origin communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -207,7 +223,10 @@ def analyze_email_pipeline(request: EmailRequest) -> EmailAnalysisResponse:
         503: {"description": "Inference model is unavailable or not loaded."}
     }
 )
-def analyze_email(request: EmailAnalysisRequest):
+def analyze_email(
+    request: EmailAnalysisRequest,
+    current_user: Optional[Dict[str, Any]] = Depends(auth_service.get_optional_current_user)
+):
     """
     Analyzes an email payload for phishing threats using the validated ML pipeline:
     1. Text & Token Analysis: Scans email subject and body with TF-IDF vectorization.
@@ -223,7 +242,17 @@ def analyze_email(request: EmailAnalysisRequest):
         )
 
     try:
-        return phishing_service.analyze_email(request)
+        result = phishing_service.analyze_email(request)
+        if current_user and getattr(request, "email_id", None):
+            try:
+                email_service.save_security_scan(
+                    user_id=current_user["id"],
+                    email_id=request.email_id,
+                    scan_data=result.model_dump()
+                )
+            except Exception as pe:
+                logger.warning("Could not persist security scan audit: %s", pe)
+        return result
     except Exception as e:
         logger.error("Analysis failed for request from sender '%s': %s", request.sender, e, exc_info=True)
         raise HTTPException(
@@ -247,7 +276,10 @@ def analyze_email(request: EmailAnalysisRequest):
         500: {"description": "Internal server error during email intelligence generation."}
     }
 )
-def generate_intelligence(request: EmailIntelligenceRequest):
+def generate_intelligence(
+    request: EmailIntelligenceRequest,
+    current_user: Optional[Dict[str, Any]] = Depends(auth_service.get_optional_current_user)
+):
     """
     Generates structured AI intelligence for an email:
     - Executive Summary: 2-5 sentence overview.
@@ -257,7 +289,17 @@ def generate_intelligence(request: EmailIntelligenceRequest):
     - Recommended Actions: Context-aware protective vs. routine productivity recommendations.
     """
     try:
-        return gemini_service.generate_intelligence(request)
+        result = gemini_service.generate_intelligence(request)
+        if current_user and getattr(request, "email_id", None):
+            try:
+                email_service.save_intelligence_result(
+                    user_id=current_user["id"],
+                    email_id=request.email_id,
+                    intel_data=result.model_dump()
+                )
+            except Exception as pe:
+                logger.warning("Could not persist intelligence result audit: %s", pe)
+        return result
     except Exception as e:
         logger.error("Email intelligence generation failed: %s", e, exc_info=True)
         raise HTTPException(
@@ -281,20 +323,34 @@ def generate_intelligence(request: EmailIntelligenceRequest):
         500: {"description": "Internal server error during reply suggestions processing."}
     }
 )
-def generate_reply_suggestions(request: ReplySuggestionsRequest):
+def generate_reply_suggestions(
+    request: ReplySuggestionsRequest,
+    current_user: Optional[Dict[str, Any]] = Depends(auth_service.get_optional_current_user)
+):
     """
     Generates three optional contextual reply drafts (Professional, Friendly, Concise) for safe emails.
     - Security Gate: Automatically blocks reply generation if the email is classified as phishing or has HIGH/CRITICAL risk.
     - Safe Fallbacks: Provides deterministic fallback replies if Gemini is offline or unconfigured.
     """
     try:
-        return reply_service.generate_reply_suggestions(request)
+        result = reply_service.generate_reply_suggestions(request)
+        if current_user and getattr(request, "email_id", None):
+            try:
+                email_service.save_reply_suggestion(
+                    user_id=current_user["id"],
+                    email_id=request.email_id,
+                    reply_data=result.model_dump()
+                )
+            except Exception as pe:
+                logger.warning("Could not persist reply suggestion audit: %s", pe)
+        return result
     except Exception as e:
         logger.error("Reply suggestions generation failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Reply suggestions generation failed: {str(e)}"
         )
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,4 +478,102 @@ def delete_email(
 ):
     success = email_service.delete_email(user_id=current_user["id"], email_id=id)
     return {"message": "Email deleted successfully.", "success": success}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. User Reminders Endpoints (Phase 20 — Strict User Isolation)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/api/v1/reminders",
+    response_model=ReminderResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Reminders"],
+    summary="Create a user-scoped deadline or task reminder"
+)
+def create_user_reminder(
+    request: ReminderCreateRequest,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    """Creates a reminder strictly associated with the authenticated user."""
+    return email_service.create_reminder(user_id=current_user["id"], data=request.model_dump())
+
+
+@app.get(
+    "/api/v1/reminders",
+    response_model=List[ReminderResponse],
+    tags=["Reminders"],
+    summary="List all reminders for the authenticated user"
+)
+def list_user_reminders(
+    email_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    """Retrieves all reminders for the authenticated user."""
+    return email_service.get_reminders(user_id=current_user["id"], email_id=email_id)
+
+
+@app.get(
+    "/api/v1/reminders/{id}",
+    response_model=ReminderResponse,
+    tags=["Reminders"],
+    summary="Get a specific reminder by ID"
+)
+def get_user_reminder(
+    id: str,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    """Retrieves a single reminder strictly scoped to the authenticated user."""
+    reminder = email_service.get_reminder_by_id(user_id=current_user["id"], reminder_id=id)
+    if not reminder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found or access denied."
+        )
+    return reminder
+
+
+@app.patch(
+    "/api/v1/reminders/{id}",
+    response_model=ReminderResponse,
+    tags=["Reminders"],
+    summary="Update a reminder (completed status, priority, title, description, due date)"
+)
+def update_user_reminder(
+    id: str,
+    request: ReminderUpdateRequest,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    """Updates a reminder strictly scoped to the authenticated user."""
+    updated = email_service.update_reminder(
+        user_id=current_user["id"],
+        reminder_id=id,
+        updates=request.model_dump(exclude_unset=True)
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found or access denied."
+        )
+    return updated
+
+
+@app.delete(
+    "/api/v1/reminders/{id}",
+    tags=["Reminders"],
+    summary="Delete a reminder"
+)
+def delete_user_reminder(
+    id: str,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    """Deletes a reminder strictly scoped to the authenticated user."""
+    success = email_service.delete_reminder(user_id=current_user["id"], reminder_id=id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found or access denied."
+        )
+    return {"message": "Reminder deleted successfully.", "success": True}
+
 

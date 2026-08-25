@@ -167,5 +167,89 @@ export const authService = {
 
     return await res.json();
   },
+
+  /**
+   * Retrieves user-scoped reminders from backend database (Phase 20)
+   */
+  async getReminders(token, emailId = null) {
+    if (!token) return [];
+    const url = emailId
+      ? `${API_BASE}/api/v1/reminders?email_id=${encodeURIComponent(emailId)}`
+      : `${API_BASE}/api/v1/reminders`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      return [];
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * Creates a user-scoped reminder on backend database
+   */
+  async createReminder(token, reminderData) {
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/api/v1/reminders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(reminderData),
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to save reminder');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * Updates a user-scoped reminder on backend database
+   */
+  async updateReminder(token, reminderId, updates) {
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/api/v1/reminders/${reminderId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(updates),
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to update reminder');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * Deletes a user-scoped reminder on backend database
+   */
+  async deleteReminder(token, reminderId) {
+    if (!token) return false;
+    const res = await fetch(`${API_BASE}/api/v1/reminders/${reminderId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to delete reminder');
+    }
+
+    return true;
+  },
 };
+
 

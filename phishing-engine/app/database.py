@@ -139,9 +139,29 @@ def init_db():
             )
         """)
 
+        # 7. User Reminders Table (Phase 20)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS reminders (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                email_id TEXT,
+                action_item_id TEXT,
+                title TEXT NOT NULL,
+                description TEXT,
+                due_at TEXT,
+                priority TEXT DEFAULT 'medium',
+                completed INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id)")
+
         conn.commit()
     _initialized = True
     logger.info("Database schema initialized successfully.")
 
 # Auto-initialize on import
 init_db()
+

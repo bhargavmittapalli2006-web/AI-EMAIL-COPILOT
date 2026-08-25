@@ -434,3 +434,157 @@ def get_reply_suggestions(user_id: int, email_id: Optional[str] = None) -> List[
             for r in rows
         ]
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Reminder Persistence Operations (Phase 20)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def create_reminder(user_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Creates a user-scoped reminder with database persistence."""
+    import uuid
+    reminder_id = f"rem-{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO reminders (
+                id, user_id, email_id, action_item_id, title, description,
+                due_at, priority, completed, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                reminder_id,
+                user_id,
+                data.get("email_id"),
+                data.get("action_item_id"),
+                data.get("title", "Follow-up Reminder"),
+                data.get("description", ""),
+                data.get("due_at"),
+                data.get("priority", "medium"),
+                1 if data.get("completed") else 0,
+                now,
+                now
+            )
+        )
+        conn.commit()
+    
+    return get_reminder_by_id(user_id, reminder_id)
+
+
+def get_reminders(user_id: int, email_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieves all reminders for user_id, optionally filtered by email_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if email_id:
+            cursor.execute(
+                "SELECT * FROM reminders WHERE user_id = ? AND email_id = ? ORDER BY created_at DESC",
+                (user_id, email_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM reminders WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,)
+            )
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": r["id"],
+                "user_id": r["user_id"],
+                "email_id": r["email_id"],
+                "action_item_id": r["action_item_id"],
+                "title": r["title"],
+                "description": r["description"] or "",
+                "due_at": r["due_at"],
+                "priority": r["priority"] or "medium",
+                "completed": bool(r["completed"]),
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+
+
+def get_reminder_by_id(user_id: int, reminder_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a single reminder strictly scoped to user_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM reminders WHERE id = ? AND user_id = ?",
+            (reminder_id, user_id)
+        )
+        r = cursor.fetchone()
+        if not r:
+            return None
+        return {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "email_id": r["email_id"],
+            "action_item_id": r["action_item_id"],
+            "title": r["title"],
+            "description": r["description"] or "",
+            "due_at": r["due_at"],
+            "priority": r["priority"] or "medium",
+            "completed": bool(r["completed"]),
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        }
+
+
+def update_reminder(user_id: int, reminder_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Updates a reminder strictly scoped to user_id."""
+    existing = get_reminder_by_id(user_id, reminder_id)
+    if not existing:
+        return None
+
+    fields = []
+    values = []
+    
+    if "title" in updates and updates["title"] is not None:
+        fields.append("title = ?")
+        values.append(updates["title"])
+    if "description" in updates and updates["description"] is not None:
+        fields.append("description = ?")
+        values.append(updates["description"])
+    if "due_at" in updates:
+        fields.append("due_at = ?")
+        values.append(updates["due_at"])
+    if "priority" in updates and updates["priority"] is not None:
+        fields.append("priority = ?")
+        values.append(updates["priority"])
+    if "completed" in updates and updates["completed"] is not None:
+        fields.append("completed = ?")
+        values.append(1 if updates["completed"] else 0)
+
+    if not fields:
+        return existing
+
+    fields.append("updated_at = ?")
+    values.append(datetime.now(timezone.utc).isoformat())
+
+    values.extend([reminder_id, user_id])
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE reminders SET {', '.join(fields)} WHERE id = ? AND user_id = ?",
+            values
+        )
+        conn.commit()
+
+    return get_reminder_by_id(user_id, reminder_id)
+
+
+def delete_reminder(user_id: int, reminder_id: str) -> bool:
+    """Deletes a reminder strictly scoped to user_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM reminders WHERE id = ? AND user_id = ?",
+            (reminder_id, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+

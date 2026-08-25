@@ -20,6 +20,8 @@ import {
   AlertCircle,
   Shield,
   FileSearch,
+  Sparkles,
+  Info,
 } from 'lucide-react';
 import { IconButton } from '../common/IconButton';
 import { Avatar } from '../common/Avatar';
@@ -29,16 +31,22 @@ import { EmailIntelligencePanel } from './EmailIntelligencePanel';
 import { ReplySuggestionsPanel } from './ReplySuggestionsPanel';
 
 /**
- * Classical Gmail-style Email Detail View with real ML-10 Security Results, Gemini Intelligence & AI Replies
+ * Classical Gmail-style Email Detail View
+ * Structured with prominent security status, sender metadata, message body,
+ * AI timeline/deadlines intelligence, and server-gated reply suggestions.
  */
 export function EmailDetail({
   email,
   analysisState = {},
   intelligenceState = {},
   replyState = {},
+  aiSettings = {},
+  persistedReminders = [],
   onScanNow,
+  onRequestAiAnalysis,
   onRetryIntelligence,
   onRetryReply,
+  onSetReminder,
   onBack,
   onDelete,
   onArchive,
@@ -47,20 +55,33 @@ export function EmailDetail({
   onSpam,
   onRestore,
 }) {
+
   if (!email) return null;
 
   const badgeMeta = getSecurityBadgeMeta(analysisState);
   const status = analysisState.status || 'idle';
   const analysis = analysisState.data || null;
+  const isThreat =
+    analysis?.is_phishing ||
+    analysis?.risk_level === 'CRITICAL' ||
+    analysis?.risk_level === 'HIGH';
+
+  const isManualAiMode = aiSettings?.aiTriggerMode === 'manual';
+  const showAiConsentCard =
+    isManualAiMode &&
+    intelligenceState.status === 'idle' &&
+    status === 'completed' &&
+    !isThreat &&
+    aiSettings?.aiIntelligenceEnabled !== false;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white dark:bg-slate-900 overflow-y-auto">
+    <div className="flex-1 flex flex-col h-full bg-white dark:bg-slate-900 overflow-y-auto select-none">
       {/* Top Action Bar */}
       <div className="h-12 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 select-none">
         <div className="flex items-center gap-1.5">
           <IconButton
             icon={ArrowLeft}
-            label="Back to inbox"
+            label="Back to list"
             onClick={onBack}
             size="sm"
             className="mr-1"
@@ -81,7 +102,6 @@ export function EmailDetail({
           <span className="h-4 w-px bg-slate-200 dark:bg-slate-750 mx-1" />
           <IconButton icon={Mail} label="Mark as unread" onClick={() => onToggleRead?.(email.id)} size="sm" />
         </div>
-
 
         <div className="flex items-center gap-1">
           <IconButton icon={Printer} label="Print email" size="sm" />
@@ -115,7 +135,7 @@ export function EmailDetail({
         </div>
 
         {/* ========================================================================= */}
-        {/* REAL ML-10 SECURITY ASSESSMENT SECTION */}
+        {/* 1. REAL ML-10 SECURITY ASSESSMENT SECTION (Top Prominence) */}
         {/* ========================================================================= */}
         {status === 'analyzing' && (
           <div className="flex items-center gap-3.5 p-4 mb-6 rounded-xl border border-blue-200 dark:border-sky-900/60 bg-blue-50/60 dark:bg-sky-950/30 text-slate-800 dark:text-slate-200">
@@ -125,7 +145,7 @@ export function EmailDetail({
                 ML-10 Threat Engine Scanning...
               </span>
               <span className="text-slate-600 dark:text-slate-300">
-                Extracting TF-IDF features, inspecting URL destinations, and evaluating sender headers against validated model.
+                Extracting TF-IDF features, inspecting URL destinations, and evaluating sender headers against validated pipeline.
               </span>
             </div>
           </div>
@@ -145,7 +165,7 @@ export function EmailDetail({
             <button
               type="button"
               onClick={onScanNow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs shadow-sm transition-colors shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs shadow-sm transition-colors shrink-0 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Retry Scan</span>
@@ -162,7 +182,7 @@ export function EmailDetail({
             <button
               type="button"
               onClick={onScanNow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-sky-600 dark:hover:bg-sky-500 text-white font-medium text-xs shadow-sm transition-colors shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-sky-600 dark:hover:bg-sky-500 text-white font-medium text-xs shadow-sm transition-colors shrink-0 cursor-pointer"
             >
               <Shield className="w-3.5 h-3.5" />
               <span>Scan Now</span>
@@ -199,7 +219,7 @@ export function EmailDetail({
                     {analysis.is_phishing ? 'Phishing Threat Detected' : 'Email Security Verified'}
                   </span>
                   <span className="text-[11px] opacity-80 mt-0.5 block">
-                    Classification: {analysis.classification.toUpperCase()} • Confidence: {(analysis.confidence * 100).toFixed(1)}%
+                    Classification: {analysis.classification.toUpperCase()} &bull; Confidence: {(analysis.confidence * 100).toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -263,24 +283,8 @@ export function EmailDetail({
         )}
 
         {/* ========================================================================= */}
-        {/* GEMINI EMAIL INTELLIGENCE PANEL (ML-11) */}
+        {/* 2. SENDER & RECIPIENT METADATA */}
         {/* ========================================================================= */}
-        <EmailIntelligencePanel
-          intelligenceState={intelligenceState}
-          analysisState={analysisState}
-          onRetry={onRetryIntelligence}
-        />
-
-        {/* ========================================================================= */}
-        {/* AI REPLY SUGGESTIONS PANEL (ML-12) */}
-        {/* ========================================================================= */}
-        <ReplySuggestionsPanel
-          replyState={replyState}
-          analysisState={analysisState}
-          onRetry={onRetryReply}
-        />
-
-        {/* Sender & Metadata Header */}
         <div className="flex items-start justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-slate-800 mb-6">
           <div className="flex items-start gap-3">
             <Avatar name={email.senderName} size="lg" color={email.avatarColor} />
@@ -313,14 +317,16 @@ export function EmailDetail({
           </div>
         </div>
 
-        {/* Message Body */}
-        <div className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-normal whitespace-pre-line select-text mb-8">
+        {/* ========================================================================= */}
+        {/* 3. MESSAGE BODY & ATTACHMENTS */}
+        {/* ========================================================================= */}
+        <div className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-normal whitespace-pre-line select-text mb-6">
           {email.body}
         </div>
 
-        {/* Attachment Card Placeholder if applicable */}
+        {/* Attachment Card if applicable */}
         {email.hasAttachment && (
-          <div className="p-4 mb-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 max-w-sm">
+          <div className="p-4 mb-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 max-w-sm">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-sky-950 flex items-center justify-center text-blue-600 dark:text-sky-400">
                 <Paperclip className="w-5 h-5" />
@@ -337,18 +343,74 @@ export function EmailDetail({
           </div>
         )}
 
+        {/* ========================================================================= */}
+        {/* 4. AI CONSENT CARD (Part 13 Requirement for Manual Trigger Mode) */}
+        {/* ========================================================================= */}
+        {showAiConsentCard && (
+          <div className="p-4 mb-6 rounded-2xl border border-blue-200 dark:border-sky-900/60 bg-blue-50/50 dark:bg-slate-850 text-xs shadow-xs space-y-3">
+            <div className="flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-blue-600 dark:text-sky-400 mt-0.5 shrink-0" />
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white block mb-0.5">
+                  AI Summarization &amp; Intelligence Ready
+                </span>
+                <span className="text-slate-600 dark:text-slate-300">
+                  This email will be analyzed by the AI intelligence service to generate an executive summary, action items, key points, and deadline timeline.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onRequestAiAnalysis}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Allow AI Analysis</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* 5. GEMINI EMAIL INTELLIGENCE PANEL (ML-11 with Timeline & Deadlines) */}
+        {/* ========================================================================= */}
+        {aiSettings?.aiIntelligenceEnabled !== false && !showAiConsentCard && (
+          <EmailIntelligencePanel
+            intelligenceState={intelligenceState}
+            analysisState={analysisState}
+            email={email}
+            persistedReminders={persistedReminders}
+            onRetry={onRetryIntelligence}
+            onSetReminder={onSetReminder}
+          />
+        )}
+
+
+        {/* ========================================================================= */}
+        {/* 6. AI REPLY SUGGESTIONS PANEL (ML-12 with Server Security Gate) */}
+        {/* ========================================================================= */}
+        {aiSettings?.aiRepliesEnabled !== false && (
+          <ReplySuggestionsPanel
+            replyState={replyState}
+            analysisState={analysisState}
+            onRetry={onRetryReply}
+          />
+        )}
+
         {/* Quick Action Footer Buttons */}
         <div className="flex items-center gap-3 pt-6 border-t border-slate-200/80 dark:border-slate-800">
           <button
             type="button"
-            className="flex items-center gap-2 px-5 py-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-5 py-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
           >
             <Reply className="w-4 h-4" />
             <span>Reply</span>
           </button>
           <button
             type="button"
-            className="flex items-center gap-2 px-5 py-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-5 py-2 rounded-full border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
           >
             <CornerUpRight className="w-4 h-4" />
             <span>Forward</span>

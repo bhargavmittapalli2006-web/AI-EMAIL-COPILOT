@@ -35,6 +35,7 @@ export function Header({
   onOpenSettings,
   onOpenHelp,
   onOpenNotifications,
+  unreadNotificationCount = 0,
   onSignOut,
 }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -149,8 +150,13 @@ export function Header({
         {/* Theme Switcher */}
         <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
 
-        {/* Notifications */}
-        <IconButton icon={Bell} label="Notifications" onClick={onOpenNotifications} size="md" />
+        {/* Notifications with dynamic badge */}
+        <div className="relative">
+          <IconButton icon={Bell} label="Notifications" onClick={onOpenNotifications} size="md" />
+          {unreadNotificationCount > 0 && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-600 dark:bg-sky-400 ring-2 ring-white dark:ring-slate-900 pointer-events-none" />
+          )}
+        </div>
 
         {/* Help & Settings */}
         <IconButton icon={HelpCircle} label="Help & Documentation" onClick={onOpenHelp} size="md" className="hidden sm:inline-flex" />
