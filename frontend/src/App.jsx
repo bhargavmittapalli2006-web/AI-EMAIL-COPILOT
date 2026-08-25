@@ -113,6 +113,22 @@ export function App() {
     setSelectedEmailId(null);
   };
 
+  // Centralized email refresh mechanism strictly synchronizing with backend database
+  const refreshEmails = useCallback(async () => {
+    if (!userSession?.token) return;
+    try {
+      const remoteEmails = await authService.getEmails(userSession.token);
+      if (Array.isArray(remoteEmails)) {
+        setEmails(remoteEmails);
+      }
+    } catch (err) {
+      console.warn('Failed to refresh emails from backend database:', err);
+      if (err.message && (err.message.includes('401') || err.message.includes('Authentication required') || err.message.includes('Invalid or expired'))) {
+        handleSignOut();
+      }
+    }
+  }, [userSession?.token]);
+
   // Probe Backend Health on Mount & recurring interval
   const probeHealth = useCallback(async () => {
     const health = await checkBackendHealth();
@@ -125,21 +141,39 @@ export function App() {
     return () => clearInterval(interval);
   }, [probeHealth]);
 
-  // Synchronize emails from backend database when user session is active
+  // Restore authenticated session & synchronize emails from database on mount / token change
   useEffect(() => {
     if (userSession?.token) {
       authService
-        .getEmails(userSession.token)
+        .getCurrentUser(userSession.token)
+        .then((userData) => {
+          if (userData) {
+            setUserSession((prev) => ({
+              ...prev,
+              ...userData,
+              name: userData.display_name || prev.name,
+              role: userData.role || prev.role,
+            }));
+            return authService.getEmails(userSession.token);
+          } else {
+            handleSignOut();
+            return null;
+          }
+        })
         .then((remoteEmails) => {
-          if (Array.isArray(remoteEmails) && remoteEmails.length > 0) {
+          if (Array.isArray(remoteEmails)) {
             setEmails(remoteEmails);
           }
         })
         .catch((err) => {
-          console.warn('Could not load remote emails, using local cache:', err);
+          console.warn('Session restoration / email sync error:', err);
+          if (err.message && (err.message.includes('401') || err.message.includes('Authentication required'))) {
+            handleSignOut();
+          }
         });
     }
   }, [userSession?.token]);
+
 
   /**
    * Triggers real Gemini intelligence for an email
@@ -425,12 +459,17 @@ export function App() {
         if (activeCategory === 'updates' && email.category !== 'updates') return false;
       }
 
-      // Search query filtering
+      // Search query filtering across complete body, subject, and sender
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesSubject = email.subject.toLowerCase().includes(query);
-        const matchesSender = email.senderName.toLowerCase().includes(query) || email.senderEmail.toLowerCase().includes(query);
-        const matchesBody = email.preview.toLowerCase().includes(query);
+        const query = searchQuery.toLowerCase().trim();
+        const matchesSubject = (email.subject || '').toLowerCase().includes(query);
+        const matchesSender =
+          (email.senderName || '').toLowerCase().includes(query) ||
+          (email.senderEmail || '').toLowerCase().includes(query) ||
+          (email.sender || '').toLowerCase().includes(query);
+        const matchesBody =
+          (email.body || '').toLowerCase().includes(query) ||
+          (email.preview || '').toLowerCase().includes(query);
         if (!matchesSubject && !matchesSender && !matchesBody) return false;
       }
 
@@ -448,21 +487,46 @@ export function App() {
   const activeFolderObj = FOLDERS.find((f) => f.id === activeFolder);
   const folderTitle = activeFolderObj ? activeFolderObj.label : 'Inbox';
 
-  // Unread count
-  const unreadCount = useMemo(() => {
-    return emails.filter((e) => e.isUnread && e.folder !== 'spam' && e.folder !== 'trash').length;
-  }, [emails]);
+  // Dynamic Folder Counts for all folders based on synchronized state & ML verdicts
+  const folderCounts = useMemo(() => {
+    const counts = {
+      inbox: emails.filter((e) => e.folder === 'inbox' && e.isUnread).length,
+      starred: emails.filter((e) => e.isStarred).length,
+      important: emails.filter((e) => e.isImportant).length,
+      sent: emails.filter((e) => e.folder === 'sent').length,
+      drafts: emails.filter((e) => e.folder === 'drafts').length,
+      all: emails.length,
+      spam: emails.filter((e) => e.folder === 'spam').length,
+      trash: emails.filter((e) => e.folder === 'trash').length,
+      archive: emails.filter((e) => e.folder === 'archive').length,
+      threats: 0,
+      'high-risk': 0,
+      critical: 0,
+      work: emails.filter((e) => e.category === 'work').length,
+      finance: emails.filter((e) => e.category === 'finance').length,
+      updates: emails.filter((e) => e.category === 'updates').length,
+      personal: emails.filter((e) => e.category === 'personal').length,
+    };
 
-  // Real Threat count from ML backend results
-  const realThreatCount = useMemo(() => {
-    let count = 0;
     Object.values(analysisMap).forEach((st) => {
-      if (st?.status === 'completed' && (st.data?.is_phishing || st.data?.risk_level === 'CRITICAL' || st.data?.risk_level === 'HIGH')) {
-        count += 1;
+      if (st?.status === 'completed') {
+        if (st.data?.is_phishing || st.data?.risk_level === 'CRITICAL' || st.data?.risk_level === 'HIGH') {
+          counts.threats += 1;
+        }
+        if (st.data?.risk_level === 'HIGH') {
+          counts['high-risk'] += 1;
+        }
+        if (st.data?.risk_level === 'CRITICAL') {
+          counts.critical += 1;
+        }
       }
     });
-    return count;
-  }, [analysisMap]);
+
+    return counts;
+  }, [emails, analysisMap]);
+
+  // Real Threat count from ML backend results
+  const realThreatCount = folderCounts.threats;
 
   // Real Clean count from ML backend results
   const realCleanCount = useMemo(() => {
@@ -523,6 +587,31 @@ export function App() {
       prev.map((e) => (e.id === emailId ? { ...e, isUnread: !e.isUnread } : e))
     );
   };
+
+  const handleRestoreEmail = (emailId) => {
+    if (userSession?.token) {
+      authService.updateEmail(userSession.token, emailId, { folder: 'inbox' }).catch(() => {});
+    }
+    setEmails((prev) =>
+      prev.map((e) => (e.id === emailId ? { ...e, folder: 'inbox' } : e))
+    );
+    if (selectedEmailId === emailId) {
+      setSelectedEmailId(null);
+    }
+  };
+
+  const handleBatchRestore = () => {
+    if (userSession?.token) {
+      selectedEmailIds.forEach((id) => {
+        authService.updateEmail(userSession.token, id, { folder: 'inbox' }).catch(() => {});
+      });
+    }
+    setEmails((prev) =>
+      prev.map((e) => (selectedEmailIds.includes(e.id) ? { ...e, folder: 'inbox' } : e))
+    );
+    setSelectedEmailIds([]);
+  };
+
 
   const handleDeleteEmail = (emailId) => {
     if (userSession?.token) {
@@ -688,8 +777,7 @@ export function App() {
           activeFolder={activeFolder}
           onSelectFolder={handleSelectFolder}
           isCollapsed={isSidebarCollapsed}
-          unreadCount={unreadCount}
-          threatCount={realThreatCount}
+          folderCounts={folderCounts}
           onCompose={() => setIsComposeOpen(true)}
         />
 
@@ -707,13 +795,15 @@ export function App() {
               onSelectStarred={handleSelectStarred}
               onRefresh={() => {
                 probeHealth();
-                setEmails([...MOCK_EMAILS]);
+                refreshEmails();
               }}
               onMarkRead={handleBatchMarkRead}
               onMarkUnread={handleBatchMarkUnread}
               onDeleteSelected={handleBatchDelete}
               onSpamSelected={handleBatchSpam}
               onArchiveSelected={handleBatchArchive}
+              onRestoreSelected={handleBatchRestore}
+              activeFolder={activeFolder}
               folderTitle={folderTitle}
             />
           )}
@@ -734,6 +824,7 @@ export function App() {
               onToggleStar={handleToggleStar}
               onToggleRead={handleToggleRead}
               onSpam={handleSpamEmail}
+              onRestore={handleRestoreEmail}
             />
           ) : (
             <EmailList
@@ -750,10 +841,12 @@ export function App() {
               onToggleRead={handleToggleRead}
               activeCategory={activeCategory}
               onSelectCategory={setActiveCategory}
+              activeFolder={activeFolder}
               folderTitle={folderTitle}
             />
           )}
         </main>
+
 
         {/* Right Security Context Side Panel */}
         <SecurityContextSidePanel

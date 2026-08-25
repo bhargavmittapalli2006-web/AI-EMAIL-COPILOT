@@ -322,3 +322,94 @@ def test_database_idempotent_initialization():
         after_user_count = cursor.fetchone()["count"]
         assert after_user_count == initial_user_count
 
+
+def test_restore_from_trash_and_spam_to_inbox():
+    """Verify that moving an email to trash/spam and restoring to inbox works correctly."""
+    uid = uuid.uuid4().hex[:8]
+    reg_resp = client.post("/api/v1/auth/register", json={
+        "email": f"restore_{uid}@enterprise.com",
+        "password": "Password123!",
+        "display_name": "Restore Tester"
+    })
+    assert reg_resp.status_code == 201
+    token = reg_resp.json()["token"]
+
+    # Create email
+    create_resp = client.post(
+        "/api/v1/emails",
+        json={
+            "subject": "Important Invoice",
+            "body": "Invoice for services rendered.",
+            "sender": "billing@vendor.com",
+            "folder": "inbox"
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert create_resp.status_code == 201
+    email_id = create_resp.json()["id"]
+
+    # 1. Move to Trash
+    trash_resp = client.patch(
+        f"/api/v1/emails/{email_id}",
+        json={"folder": "trash"},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert trash_resp.status_code == 200
+    assert trash_resp.json()["folder"] == "trash"
+
+    # 2. Restore to Inbox
+    restore_resp = client.patch(
+        f"/api/v1/emails/{email_id}",
+        json={"folder": "inbox"},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert restore_resp.status_code == 200
+    assert restore_resp.json()["folder"] == "inbox"
+
+    # 3. Move to Spam
+    spam_resp = client.patch(
+        f"/api/v1/emails/{email_id}",
+        json={"folder": "spam"},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert spam_resp.status_code == 200
+    assert spam_resp.json()["folder"] == "spam"
+
+    # 4. Restore from Spam to Inbox
+    restore_spam_resp = client.patch(
+        f"/api/v1/emails/{email_id}",
+        json={"folder": "inbox"},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert restore_spam_resp.status_code == 200
+    assert restore_spam_resp.json()["folder"] == "inbox"
+
+
+def test_empty_mailbox_returns_empty_list_after_deletions():
+    """Verify that deleting all emails results in an empty array [] without errors."""
+    uid = uuid.uuid4().hex[:8]
+    reg_resp = client.post("/api/v1/auth/register", json={
+        "email": f"empty_{uid}@enterprise.com",
+        "password": "Password123!",
+        "display_name": "Empty Inbox Tester"
+    })
+    assert reg_resp.status_code == 201
+    token = reg_resp.json()["token"]
+
+    # Fetch initial seeded emails
+    list_resp = client.get("/api/v1/emails", headers={"Authorization": f"Bearer {token}"})
+    assert list_resp.status_code == 200
+    initial_emails = list_resp.json()
+    assert len(initial_emails) > 0
+
+    # Delete all emails
+    for em in initial_emails:
+        del_resp = client.delete(f"/api/v1/emails/{em['id']}", headers={"Authorization": f"Bearer {token}"})
+        assert del_resp.status_code == 200
+
+    # Verify mailbox is now empty array []
+    final_list_resp = client.get("/api/v1/emails", headers={"Authorization": f"Bearer {token}"})
+    assert final_list_resp.status_code == 200
+    assert final_list_resp.json() == []
+
+

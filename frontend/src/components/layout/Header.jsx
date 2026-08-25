@@ -179,8 +179,9 @@ export function Header({
                 </span>
                 <div className="mt-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-sky-950 text-blue-800 dark:text-sky-300 text-[10px] font-semibold w-max">
                   <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                  <span>Frontend Auth Shell</span>
+                  <span>{userSession.role || 'SecOps Analyst'}</span>
                 </div>
+
               </div>
 
               <div className="py-2 space-y-1">

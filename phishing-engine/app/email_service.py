@@ -104,8 +104,8 @@ def seed_mock_emails_if_empty(user_id: int):
 
 def get_user_emails(user_id: int, folder: Optional[str] = None) -> List[Dict[str, Any]]:
     """Retrieves all emails for user_id, ensuring strict user isolation."""
-    seed_mock_emails_if_empty(user_id)
     with get_db_connection() as conn:
+
         cursor = conn.cursor()
         if folder:
             cursor.execute("SELECT * FROM emails WHERE user_id = ? AND folder = ? ORDER BY created_at DESC", (user_id, folder))

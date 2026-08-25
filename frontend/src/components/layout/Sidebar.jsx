@@ -49,8 +49,7 @@ export function Sidebar({
   activeFolder,
   onSelectFolder,
   isCollapsed = false,
-  unreadCount = 4,
-  threatCount = 2,
+  folderCounts = {},
   onCompose,
 }) {
   const mailFolders = FOLDERS.filter((f) => f.section === 'mail');
@@ -61,10 +60,8 @@ export function Sidebar({
     const IconComponent = ICONS_MAP[folder.icon] || Tag;
     const isActive = activeFolder === folder.id;
 
-    // Dynamic badge overrides
-    let badgeVal = folder.badge;
-    if (folder.id === 'inbox') badgeVal = unreadCount;
-    if (folder.id === 'threats') badgeVal = threatCount;
+    // Dynamic badge from synchronized state
+    const badgeVal = folderCounts[folder.id];
 
     return (
       <button
@@ -96,7 +93,7 @@ export function Sidebar({
                     ? 'bg-blue-600 text-white dark:bg-sky-500 dark:text-slate-900'
                     : folder.section === 'security'
                     ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300'
-                    : 'text-slate-600 dark:text-slate-300'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                 }`}
               >
                 {badgeVal}
@@ -107,6 +104,7 @@ export function Sidebar({
       </button>
     );
   };
+
 
   return (
     <aside

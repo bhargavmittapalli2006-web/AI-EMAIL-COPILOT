@@ -263,10 +263,11 @@ export const FOLDERS = [
   { id: 'starred', label: 'Starred', icon: 'Star', section: 'mail' },
   { id: 'important', label: 'Important', icon: 'Bookmark', section: 'mail' },
   { id: 'sent', label: 'Sent', icon: 'Send', section: 'mail' },
-  { id: 'drafts', label: 'Drafts', icon: 'FileText', badge: 1, section: 'mail' },
+  { id: 'drafts', label: 'Drafts', icon: 'FileText', section: 'mail' },
   { id: 'all', label: 'All Mail', icon: 'Mail', section: 'mail' },
-  { id: 'spam', label: 'Spam', icon: 'AlertOctagon', badge: 1, section: 'mail' },
+  { id: 'spam', label: 'Spam', icon: 'AlertOctagon', section: 'mail' },
   { id: 'trash', label: 'Trash', icon: 'Trash2', section: 'mail' },
+
 
   { id: 'security-overview', label: 'Security Overview', icon: 'Shield', section: 'security' },
   { id: 'threats', label: 'Threats Detected', icon: 'ShieldAlert', section: 'security' },

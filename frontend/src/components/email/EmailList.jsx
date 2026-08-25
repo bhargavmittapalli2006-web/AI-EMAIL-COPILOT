@@ -25,6 +25,7 @@ export function EmailList({
   onToggleRead,
   activeCategory = 'primary',
   onSelectCategory,
+  activeFolder = 'inbox',
   folderTitle = 'Inbox',
 }) {
   const categories = [
@@ -36,40 +37,43 @@ export function EmailList({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-white dark:bg-slate-900 overflow-hidden">
-      {/* Category Tabs (Gmail Style) */}
-      <div className="flex items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 px-2 shrink-0 select-none overflow-x-auto">
-        {categories.map((cat) => {
-          const Icon = cat.icon;
-          const isActive = activeCategory === cat.id;
+      {/* Category Tabs (Gmail Style) — Only rendered for Primary Inbox */}
+      {activeFolder === 'inbox' && (
+        <div className="flex items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 px-2 shrink-0 select-none overflow-x-auto">
+          {categories.map((cat) => {
+            const Icon = cat.icon;
+            const isActive = activeCategory === cat.id;
 
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => onSelectCategory?.(cat.id)}
-              className={`flex items-center gap-2.5 px-6 py-3 border-b-2 text-xs font-semibold tracking-tight transition-colors whitespace-nowrap ${
-                isActive
-                  ? 'border-blue-600 text-blue-600 dark:border-sky-400 dark:text-sky-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <Icon className="w-4 h-4 stroke-[2]" />
-              <span>{cat.label}</span>
-              {cat.count > 0 && (
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isActive
-                      ? 'bg-blue-100 text-blue-800 dark:bg-sky-950 dark:text-sky-300'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                  }`}
-                >
-                  {cat.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => onSelectCategory?.(cat.id)}
+                className={`flex items-center gap-2.5 px-6 py-3 border-b-2 text-xs font-semibold tracking-tight transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'border-blue-600 text-blue-600 dark:border-sky-400 dark:text-sky-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <Icon className="w-4 h-4 stroke-[2]" />
+                <span>{cat.label}</span>
+                {cat.count > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isActive
+                        ? 'bg-blue-100 text-blue-800 dark:bg-sky-950 dark:text-sky-300'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                    }`}
+                  >
+                    {cat.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
 
       {/* Email List Rows Container */}
       <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-850">

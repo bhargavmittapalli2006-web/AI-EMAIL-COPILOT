@@ -36,8 +36,11 @@ export function Toolbar({
   onDeleteSelected,
   onSpamSelected,
   onArchiveSelected,
+  onRestoreSelected,
+  activeFolder = 'inbox',
   folderTitle = 'Inbox',
 }) {
+
   const [isSelectMenuOpen, setIsSelectMenuOpen] = useState(false);
 
   const isAllSelected = selectedCount > 0 && selectedCount === totalEmails;
@@ -141,8 +144,18 @@ export function Toolbar({
         {/* Action icons when items are selected */}
         {selectedCount > 0 ? (
           <div className="flex items-center gap-1 pl-2 border-l border-slate-200 dark:border-slate-700">
+            {(activeFolder === 'trash' || activeFolder === 'spam') && (
+              <IconButton
+                icon={RotateCcw}
+                label={activeFolder === 'spam' ? 'Not Spam / Restore to Inbox' : 'Restore to Inbox'}
+                onClick={onRestoreSelected}
+                size="sm"
+              />
+            )}
             <IconButton icon={Archive} label="Archive" onClick={onArchiveSelected} size="sm" />
-            <IconButton icon={AlertOctagon} label="Report Spam" onClick={onSpamSelected} size="sm" />
+            {activeFolder !== 'spam' && (
+              <IconButton icon={AlertOctagon} label="Report Spam" onClick={onSpamSelected} size="sm" />
+            )}
             <IconButton icon={Trash2} label="Delete" onClick={onDeleteSelected} size="sm" />
             <span className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
             <IconButton icon={MailOpen} label="Mark as read" onClick={onMarkRead} size="sm" />
@@ -151,6 +164,7 @@ export function Toolbar({
             <IconButton icon={Tag} label="Apply label" size="sm" />
           </div>
         ) : (
+
           <div className="flex items-center gap-1 pl-1">
             <IconButton icon={RotateCcw} label="Refresh mailbox" onClick={onRefresh} size="sm" />
             <IconButton icon={MoreVertical} label="More options" size="sm" />

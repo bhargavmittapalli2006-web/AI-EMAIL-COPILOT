@@ -45,6 +45,7 @@ export function EmailDetail({
   onToggleStar,
   onToggleRead,
   onSpam,
+  onRestore,
 }) {
   if (!email) return null;
 
@@ -64,12 +65,23 @@ export function EmailDetail({
             size="sm"
             className="mr-1"
           />
+          {(email.folder === 'trash' || email.folder === 'spam') && (
+            <IconButton
+              icon={RotateCcw}
+              label={email.folder === 'spam' ? 'Not Spam / Restore to Inbox' : 'Restore to Inbox'}
+              onClick={() => onRestore?.(email.id)}
+              size="sm"
+            />
+          )}
           <IconButton icon={Archive} label="Archive" onClick={() => onArchive?.(email.id)} size="sm" />
-          <IconButton icon={AlertOctagon} label="Report as Spam" onClick={() => onSpam?.(email.id)} size="sm" />
+          {email.folder !== 'spam' && (
+            <IconButton icon={AlertOctagon} label="Report as Spam" onClick={() => onSpam?.(email.id)} size="sm" />
+          )}
           <IconButton icon={Trash2} label="Delete" onClick={() => onDelete?.(email.id)} size="sm" />
           <span className="h-4 w-px bg-slate-200 dark:bg-slate-750 mx-1" />
           <IconButton icon={Mail} label="Mark as unread" onClick={() => onToggleRead?.(email.id)} size="sm" />
         </div>
+
 
         <div className="flex items-center gap-1">
           <IconButton icon={Printer} label="Print email" size="sm" />

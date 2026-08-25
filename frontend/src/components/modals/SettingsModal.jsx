@@ -296,9 +296,10 @@ export function SettingsModal({
                     <span className="font-bold text-slate-800 dark:text-slate-200">{userSession.email || 'bhargav.mittapalli@company.com'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-400">Session Type:</span>
-                    <span className="font-semibold text-blue-600 dark:text-sky-400">Frontend Auth Shell</span>
+                    <span className="text-slate-600 dark:text-slate-400">Session Role:</span>
+                    <span className="font-semibold text-blue-600 dark:text-sky-400">{userSession.role || 'SecOps Analyst'}</span>
                   </div>
+
                 </div>
 
                 {onSignOut && (

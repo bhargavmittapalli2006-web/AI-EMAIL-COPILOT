@@ -95,9 +95,14 @@ def register_user(email: str, password: str, display_name: str, role: str = "Use
         )
         conn.commit()
 
+    # Seed initial inbox for new user once
+    from app.email_service import seed_mock_emails_if_empty
+    seed_mock_emails_if_empty(user_id)
+
     token = generate_session_token(user_id, email_clean)
     return {
         "user_id": user_id,
+
         "email": email_clean,
         "display_name": display_name.strip(),
         "role": role,
