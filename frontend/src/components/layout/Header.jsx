@@ -183,12 +183,17 @@ export function Header({
                 <span className="text-slate-500 dark:text-slate-400 text-[11px] block truncate">
                   {userSession.email || 'bhargav.mittapalli@company.com'}
                 </span>
-                <div className="mt-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-sky-950 text-blue-800 dark:text-sky-300 text-[10px] font-semibold w-max">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                  <span>{userSession.role || 'SecOps Analyst'}</span>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-sky-950 text-blue-800 dark:text-sky-300 text-[10px] font-semibold">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    <span>{userSession.role || 'SecOps Analyst'}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                    Auth: <strong className="text-slate-700 dark:text-slate-300">{userSession.auth_provider === 'google' || userSession.authProvider === 'google' ? 'Google' : 'Password'}</strong>
+                  </span>
                 </div>
-
               </div>
+
 
               <div className="py-2 space-y-1">
                 <button

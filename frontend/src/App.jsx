@@ -28,8 +28,37 @@ import { authService } from './services/authService';
  * - Phase 4: Real ML-12 AI Reply Suggestions + Security Gate
  */
 export function App() {
-  // Frontend Session State (Persisted in localStorage)
+  // Extract initial OAuth error if any from URL
+  const [oauthError, setOauthError] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const err = urlParams.get('oauth_error');
+      if (err) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return err;
+      }
+    }
+    return null;
+  });
+
+  // Frontend Session State (Persisted in localStorage with OAuth URL token support)
   const [userSession, setUserSession] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const oauthToken = urlParams.get('oauth_token');
+      if (oauthToken) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        const session = {
+          token: oauthToken,
+          authenticatedAt: new Date().toISOString(),
+        };
+        try {
+          localStorage.setItem('ai_email_copilot_session', JSON.stringify(session));
+        } catch (_) {}
+        return session;
+      }
+    }
+
     const savedSession = localStorage.getItem('ai_email_copilot_session');
     if (savedSession) {
       try {
@@ -40,6 +69,7 @@ export function App() {
   });
 
   const isAuthenticated = Boolean(userSession);
+
 
   // Theme state persisted in localStorage
   const [isDark, setIsDark] = useState(() => {
@@ -839,9 +869,11 @@ export function App() {
         onNavigateLanding={() => {}}
         theme={isDark ? 'dark' : 'light'}
         onToggleTheme={toggleTheme}
+        oauthError={oauthError}
       />
     );
   }
+
 
   // Unread Notification Count
   const unreadNotificationCount = useMemo(() => {

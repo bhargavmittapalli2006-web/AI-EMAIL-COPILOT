@@ -88,6 +88,34 @@ export const authService = {
   },
 
   /**
+   * Retrieves Google OAuth configuration status from backend
+   */
+  async getGoogleAuthConfig() {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/auth/google/config`);
+      if (res.ok) {
+        return await res.json();
+      }
+      return { configured: false };
+    } catch {
+      return { configured: false };
+    }
+  },
+
+  /**
+   * Generates Google OAuth 2.0 authorization URL from backend
+   */
+  async getGoogleAuthUrl() {
+    const res = await fetch(`${API_BASE}/api/v1/auth/google/login`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Google OAuth is not configured.' }));
+      throw new Error(err.detail || 'Failed to initiate Google Sign-In');
+    }
+    return await res.json();
+  },
+
+
+  /**
    * Retrieves persistent emails for user from backend
    */
   async getEmails(token, folder = null) {
