@@ -29,7 +29,7 @@ def test_oauth_config_endpoint():
 
 def test_google_login_unconfigured_fails_gracefully():
     """Verify Google login returns 503 when environment variables are not set."""
-    with patch.object(auth_service, "GOOGLE_CLIENT_ID", ""), patch.object(auth_service, "GOOGLE_CLIENT_SECRET", ""):
+    with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": ""}):
         resp = client.get("/api/v1/auth/google/login")
         assert resp.status_code == 503
         assert "not configured" in resp.json()["detail"].lower()
@@ -37,8 +37,10 @@ def test_google_login_unconfigured_fails_gracefully():
 
 def test_google_login_generates_valid_state_and_url():
     """Verify Google login generates secure state and valid authorization URL."""
-    with patch.object(auth_service, "GOOGLE_CLIENT_ID", "test-google-client-id.apps.googleusercontent.com"), \
-         patch.object(auth_service, "GOOGLE_CLIENT_SECRET", "test-google-secret"):
+    with patch.dict(os.environ, {
+        "GOOGLE_CLIENT_ID": "test-google-client-id.apps.googleusercontent.com",
+        "GOOGLE_CLIENT_SECRET": "test-google-secret"
+    }):
         resp = client.get("/api/v1/auth/google/login")
         assert resp.status_code == 200
         data = resp.json()
@@ -47,6 +49,7 @@ def test_google_login_generates_valid_state_and_url():
         assert "accounts.google.com" in data["authorization_url"]
         assert "test-google-client-id" in data["authorization_url"]
         assert data["state"] in data["authorization_url"]
+
 
 
 def test_oauth_state_lifecycle_csrf_protection():
@@ -160,13 +163,12 @@ def test_google_user_isolation_and_reminders():
 @pytest.mark.anyio
 async def test_google_claims_validation_issuer_and_audience():
     """Verify token validation rejects invalid issuer, mismatched audience, and unverified email."""
-    with patch.object(auth_service, "GOOGLE_CLIENT_ID", "valid-client-id"), \
-         patch.object(auth_service, "GOOGLE_CLIENT_SECRET", "valid-secret"):
-
+    with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "valid-client-id", "GOOGLE_CLIENT_SECRET": "valid-secret"}):
         # 1. Reject invalid state
         with pytest.raises(Exception) as exc_state:
             await exchange_google_code_and_authenticate(code="valid_code", state="invalid_state")
         assert "invalid" in str(exc_state.value).lower() or "state" in str(exc_state.value).lower()
+
 
 
 def test_google_callback_redirect_error_handling():

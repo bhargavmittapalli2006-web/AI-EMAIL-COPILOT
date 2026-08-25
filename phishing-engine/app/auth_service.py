@@ -10,20 +10,46 @@ from typing import Optional, Dict, Any
 import httpx
 from fastapi import Request, HTTPException, status, Header, Depends
 
+try:
+    from dotenv import load_dotenv
+    # Load .env from phishing-engine/.env or workspace .env
+    _base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _root_dir = os.path.dirname(_base_dir)
+    for _path in [os.path.join(_base_dir, ".env"), os.path.join(_root_dir, ".env"), ".env"]:
+        if os.path.exists(_path):
+            load_dotenv(_path)
+except ImportError:
+    pass
+
 from app.database import get_db_connection
 
 logger = logging.getLogger("phishing-engine.auth")
 
-SECRET_KEY = os.environ.get("SESSION_SECRET_KEY", "ai_email_copilot_secops_secret_key_2026")
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
-GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+def get_session_secret() -> str:
+    return os.environ.get("SESSION_SECRET_KEY", "ai_email_copilot_secops_secret_key_2026")
+
+
+def get_google_client_id() -> str:
+    return os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+
+
+def get_google_client_secret() -> str:
+    return os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+
+
+def get_google_redirect_uri() -> str:
+    return os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback").strip()
+
+
+def get_frontend_url() -> str:
+    return os.environ.get("FRONTEND_URL", "http://localhost:5173").strip()
 
 
 def is_google_oauth_configured() -> bool:
     """Returns True if Google OAuth 2.0 client ID and client secret are configured."""
-    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+    return bool(get_google_client_id() and get_google_client_secret())
+
 
 
 def hash_password(password: str, salt: Optional[bytes] = None) -> str:
@@ -50,7 +76,7 @@ def generate_session_token(user_id: int, email: str) -> str:
     """Generates an HMAC-SHA256 signed session token containing user_id and expiration."""
     exp = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     payload = json.dumps({"user_id": user_id, "email": email, "exp": exp})
-    signature = hmac.new(SECRET_KEY.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    signature = hmac.new(get_session_secret().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     raw_token = f"{payload}.{signature}"
     return raw_token.encode("utf-8").hex()
 
@@ -60,7 +86,7 @@ def decode_session_token(token_hex: str) -> Optional[Dict[str, Any]]:
     try:
         raw_token = bytes.fromhex(token_hex).decode("utf-8")
         payload_str, signature = raw_token.rsplit(".", 1)
-        expected_sig = hmac.new(SECRET_KEY.encode("utf-8"), payload_str.encode("utf-8"), hashlib.sha256).hexdigest()
+        expected_sig = hmac.new(get_session_secret().encode("utf-8"), payload_str.encode("utf-8"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected_sig):
             return None
 
@@ -118,8 +144,8 @@ def get_google_auth_url() -> Dict[str, Any]:
     save_oauth_state(state, expires_seconds=600)
 
     params = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "client_id": get_google_client_id(),
+        "redirect_uri": get_google_redirect_uri(),
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
@@ -131,6 +157,7 @@ def get_google_auth_url() -> Dict[str, Any]:
         "authorization_url": auth_url,
         "state": state,
     }
+
 
 
 def get_or_create_google_user(sub: str, email: str, display_name: Optional[str] = None) -> Dict[str, Any]:
@@ -235,11 +262,12 @@ def get_or_create_google_user(sub: str, email: str, display_name: Optional[str] 
         )
         conn.commit()
 
-    # Seed initial inbox for new Google user
-    from app.email_service import seed_mock_emails_if_empty
-    seed_mock_emails_if_empty(user_id)
+    # Initialize mailbox with authoritative dataset for new Google user
+    from app.email_service import init_user_mailbox
+    init_user_mailbox(user_id, recipient_email=email_clean)
 
     token = generate_session_token(user_id, email_clean)
+
     return {
         "user_id": user_id,
         "email": email_clean,
@@ -271,11 +299,11 @@ async def exchange_google_code_and_authenticate(code: str, state: str) -> Dict[s
     # 2. Exchange code with Google
     token_url = "https://oauth2.googleapis.com/token"
     payload = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
+        "client_id": get_google_client_id(),
+        "client_secret": get_google_client_secret(),
         "code": code,
         "grant_type": "authorization_code",
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "redirect_uri": get_google_redirect_uri(),
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -332,8 +360,9 @@ async def exchange_google_code_and_authenticate(code: str, state: str) -> Dict[s
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token issuer.")
 
         aud = userinfo.get("aud")
-        if aud and aud != GOOGLE_CLIENT_ID:
+        if aud and aud != get_google_client_id():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token audience mismatch.")
+
 
         email_verified = userinfo.get("email_verified")
         if isinstance(email_verified, str):
@@ -387,11 +416,12 @@ def register_user(email: str, password: str, display_name: str, role: str = "Use
         )
         conn.commit()
 
-    # Seed initial inbox for new user once
-    from app.email_service import seed_mock_emails_if_empty
-    seed_mock_emails_if_empty(user_id)
+    # Initialize mailbox with authoritative dataset for new registered user
+    from app.email_service import init_user_mailbox
+    init_user_mailbox(user_id, recipient_email=email_clean)
 
     token = generate_session_token(user_id, email_clean)
+
     return {
         "user_id": user_id,
         "email": email_clean,

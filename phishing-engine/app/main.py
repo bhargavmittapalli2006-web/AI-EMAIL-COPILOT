@@ -434,8 +434,8 @@ def get_google_oauth_config():
     configured = auth_service.is_google_oauth_configured()
     return GoogleAuthConfigResponse(
         configured=configured,
-        client_id=auth_service.GOOGLE_CLIENT_ID if configured else None,
-        redirect_uri=auth_service.GOOGLE_REDIRECT_URI if configured else None,
+        client_id=auth_service.get_google_client_id() if configured else None,
+        redirect_uri=auth_service.get_google_redirect_uri() if configured else None,
     )
 
 
@@ -471,13 +471,14 @@ async def google_oauth_callback(
     Handles Google OAuth redirect: validates state, exchanges code, verifies OpenID Connect identity,
     creates/links application session, and redirects user to frontend application.
     """
-    frontend_base = auth_service.FRONTEND_URL.rstrip("/")
+    frontend_base = auth_service.get_frontend_url().rstrip("/")
     if error:
         err_msg = error_description or error
         return RedirectResponse(
             url=f"{frontend_base}/?oauth_error={urllib.parse.quote(err_msg)}",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT
         )
+
 
     if not code or not state:
         return RedirectResponse(
@@ -560,6 +561,26 @@ def update_email(
     return email_service.update_email(user_id=current_user["id"], email_id=id, updates=request.model_dump(exclude_unset=True))
 
 
+@app.post(
+    "/api/v1/emails/import",
+    tags=["Emails"],
+    summary="Import authoritative dataset emails into user's authenticated mailbox"
+)
+def import_emails(
+    force: bool = False,
+    current_user: Dict[str, Any] = Depends(auth_service.get_current_user)
+):
+    """
+    Imports the cleaned email dataset into the authenticated user's mailbox.
+    Idempotent: prevents duplicate records and respects user deletions unless force=True.
+    """
+    return email_service.import_dataset_emails_for_user(
+        user_id=current_user["id"],
+        recipient_email=current_user["email"],
+        force=force
+    )
+
+
 @app.delete(
     "/api/v1/emails/{id}",
     tags=["Emails"],
@@ -571,6 +592,7 @@ def delete_email(
 ):
     success = email_service.delete_email(user_id=current_user["id"], email_id=id)
     return {"message": "Email deleted successfully.", "success": success}
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

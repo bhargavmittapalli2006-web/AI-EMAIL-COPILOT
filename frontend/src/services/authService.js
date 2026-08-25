@@ -136,6 +136,26 @@ export const authService = {
   },
 
   /**
+   * Imports authoritative dataset emails into user's mailbox on demand
+   */
+  async importDatasetEmails(token, force = false) {
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/api/v1/emails/import?force=${force}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to import dataset emails');
+    }
+
+    return await res.json();
+  },
+
+
+  /**
    * Persists a newly created or composed email to backend database
    */
   async createEmail(token, emailData) {

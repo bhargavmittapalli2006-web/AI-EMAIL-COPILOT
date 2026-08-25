@@ -54,11 +54,21 @@ def init_db():
                 notify_threats INTEGER DEFAULT 1,
                 notify_daily_report INTEGER DEFAULT 0,
                 sensitivity_threshold TEXT DEFAULT 'standard',
+                mailbox_initialized INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
+
+        # Migration helper for existing databases: ensure mailbox_initialized exists
+        cursor.execute("PRAGMA table_info(user_settings)")
+        setting_cols = [c[1] for c in cursor.fetchall()]
+        if "mailbox_initialized" not in setting_cols:
+            try:
+                cursor.execute("ALTER TABLE user_settings ADD COLUMN mailbox_initialized INTEGER DEFAULT 0")
+            except Exception:
+                pass
 
         # 3. Emails Table
         cursor.execute("""
@@ -87,6 +97,9 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_emails_user_id ON emails(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_emails_user_folder ON emails(user_id, folder)")
+
 
         # 4. Security Scans Table
         cursor.execute("""

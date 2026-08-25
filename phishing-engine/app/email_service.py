@@ -1,11 +1,17 @@
+import os
+import re
 import json
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import List, Dict, Any, Optional, Tuple
+import pandas as pd
 from fastapi import HTTPException, status
 
 from app.database import get_db_connection
 
-# Seed fixture data for newly registered users
+logger = logging.getLogger("phishing-engine.emails")
+
+# Seed fixture data for development/demo fallback
 SEED_EMAILS = [
   {
     "id": "msg-101",
@@ -71,7 +77,7 @@ SEED_EMAILS = [
 
 
 def seed_mock_emails_if_empty(user_id: int):
-    """Populates seed fixture emails for a user if their database inbox is empty."""
+    """Populates seed fixture emails for a user if their database inbox is empty (development fallback)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) as count FROM emails WHERE user_id = ?", (user_id,))
@@ -99,6 +105,245 @@ def seed_mock_emails_if_empty(user_id: int):
                 )
             )
         conn.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Real Dataset Mailbox Importer (Phase 23)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_cleaned_emails_csv_path() -> Optional[str]:
+    """Finds the authoritative processed dataset cleaned_emails.csv."""
+    candidate_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "processed", "cleaned_emails.csv")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "processed", "cleaned_emails.csv")),
+        os.path.join("data", "processed", "cleaned_emails.csv"),
+    ]
+    for p in candidate_paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def parse_sender_details(raw_sender: Any) -> Tuple[str, str]:
+    """
+    Parses display name and email address from any sender format.
+    Handles: 'Name <email@domain.com>', 'email@domain.com', '"Name" <>', None/empty.
+    """
+    if not raw_sender or not isinstance(raw_sender, str):
+        return ("Unknown Sender", "notifications@enterprise.com")
+
+    clean = raw_sender.strip().strip('"').strip("'")
+    if not clean:
+        return ("Unknown Sender", "notifications@enterprise.com")
+
+    # Match Name <email>
+    match = re.match(r'^(.*?)\s*<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>$', clean)
+    if match:
+        name = match.group(1).strip().strip('"').strip("'")
+        email = match.group(2).strip().lower()
+        sender_name = name if name else email.split('@')[0].capitalize()
+        return (sender_name, email)
+
+    # Match Name <> (empty email inside brackets)
+    empty_bracket = re.match(r'^(.*?)\s*<>$', clean)
+    if empty_bracket:
+        name = empty_bracket.group(1).strip().strip('"').strip("'")
+        sender_name = name if name else "Email Notification"
+        clean_prefix = re.sub(r'[^a-zA-Z0-9]', '.', sender_name.lower()).strip('.') or "notice"
+        return (sender_name, f"{clean_prefix}@service-notifications.org")
+
+    # Match standalone email
+    email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', clean)
+    if email_match:
+        email = email_match.group(0).lower()
+        prefix = email.split('@')[0].replace('.', ' ').replace('_', ' ').replace('-', ' ').title()
+        return (prefix, email)
+
+    # General text fallback
+    sender_name = clean[:50]
+    safe_email = re.sub(r'[^a-zA-Z0-9]', '.', clean.lower()).strip('.')[:30] or "sender"
+    return (sender_name, f"{safe_email}@company.com")
+
+
+def parse_links_json(raw_links: Any) -> str:
+    """Parses raw links from dataset and returns serialized JSON string."""
+    if not raw_links or pd.isna(raw_links):
+        return "[]"
+    if isinstance(raw_links, list):
+        return json.dumps([str(u) for u in raw_links if u])
+    if isinstance(raw_links, str):
+        try:
+            val = json.loads(raw_links)
+            if isinstance(val, list):
+                return json.dumps([str(u) for u in val if u])
+        except Exception:
+            pass
+        urls = re.findall(r'https?://[^\s\'"<>]+', raw_links)
+        return json.dumps(urls)
+    return "[]"
+
+
+def determine_email_category(subject: str, body: str) -> str:
+    """Deterministically assigns UI category based on keywords."""
+    s_low = (subject or "").lower()
+    b_low = (body or "").lower()
+    if any(k in s_low or k in b_low for k in ['bank', 'statement', 'invoice', 'payment', 'wire', 'transfer', 'balance', 'charge', 'refund', 'margin', 'dollar', 'usd', 'billing']):
+        return "finance"
+    if any(k in s_low or k in b_low for k in ['security', 'alert', 'suspended', 'password', 'verify', 'verification', 'unauthorized', 'login', 'access', 'blocked', 'threat', 'expired', 'fraud']):
+        return "security"
+    if any(k in s_low for k in ['newsletter', 'discount', 'deal', 'deals', 'sale', 'offer', 'win', 'winner', 'gift card', 'reward', 'claim']):
+        return "promotions"
+    if any(k in s_low for k in ['invitation', 'friend', 'connect', 'social', 'party', 'linkedin', 'twitter', 'facebook']):
+        return "social"
+    return "work"
+
+
+AVATAR_COLORS = [
+    "bg-blue-600",
+    "bg-indigo-600",
+    "bg-emerald-600",
+    "bg-purple-600",
+    "bg-amber-600",
+    "bg-rose-600",
+    "bg-teal-600",
+    "bg-sky-600",
+]
+
+
+def import_dataset_emails_for_user(
+    user_id: int,
+    recipient_email: Optional[str] = None,
+    force: bool = False,
+    max_count: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Imports the authoritative processed dataset (cleaned_emails.csv) into SQLite for the specified user_id.
+    - Strict multi-tenant user isolation.
+    - Idempotent: checks existing IDs to prevent duplicates.
+    - Protects user deletions: if mailbox is already initialized and force=False, skips re-importing.
+    - Dataset label / classification is NOT stored as an authoritative security decision.
+    """
+    csv_path = get_cleaned_emails_csv_path()
+    if not csv_path or not os.path.exists(csv_path):
+        logger.warning("cleaned_emails.csv not found, falling back to seed fixture.")
+        seed_mock_emails_if_empty(user_id)
+        return {"imported_count": 0, "skipped_count": 0, "fallback_seeded": True}
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Check if mailbox is already initialized (protecting intentional deletions)
+        if not force:
+            cursor.execute("SELECT mailbox_initialized FROM user_settings WHERE user_id = ?", (user_id,))
+            setting_row = cursor.fetchone()
+            if setting_row and setting_row["mailbox_initialized"] == 1:
+                cursor.execute("SELECT COUNT(*) as count FROM emails WHERE user_id = ?", (user_id,))
+                total = cursor.fetchone()["count"]
+                return {"imported_count": 0, "skipped_count": 0, "total_user_emails": total, "already_initialized": True}
+
+        # Retrieve existing email IDs for this user
+        cursor.execute("SELECT id FROM emails WHERE user_id = ?", (user_id,))
+        existing_ids = {row["id"] for row in cursor.fetchall()}
+
+        df = pd.read_csv(csv_path)
+        if max_count and max_count > 0:
+            df = df.head(max_count)
+
+        target_recipient = recipient_email or "user@enterprise.com"
+        now = datetime.now(timezone.utc)
+        records_to_insert = []
+        skipped = 0
+
+        for i, row in df.iterrows():
+            raw_id = str(row["id"]) if pd.notna(row["id"]) else f"email-{i+1}"
+            email_id = f"u{user_id}-{raw_id}"
+
+            if email_id in existing_ids:
+                skipped += 1
+                continue
+
+            raw_subj = row.get("subject")
+            subject = str(raw_subj).strip() if pd.notna(raw_subj) and str(raw_subj).strip() else "(No Subject)"
+
+            raw_body = row.get("body")
+            body = str(raw_body).strip() if pd.notna(raw_body) and str(raw_body).strip() else "(No Content)"
+            preview = body[:120].replace('\n', ' ').strip()
+
+            sender_name, sender_email = parse_sender_details(row.get("sender"))
+
+            raw_reply = row.get("reply_to")
+            if pd.notna(raw_reply) and str(raw_reply).strip():
+                _, reply_to = parse_sender_details(str(raw_reply))
+            else:
+                reply_to = sender_email
+
+            links_json = parse_links_json(row.get("links"))
+            category = determine_email_category(subject, body)
+            avatar_color = AVATAR_COLORS[abs(hash(sender_name)) % len(AVATAR_COLORS)]
+
+            # Timestamp spacing for realistic timeline
+            delta_mins = i * 12
+            record_time = now - timedelta(minutes=delta_mins)
+            created_at = record_time.isoformat()
+            date_str = record_time.strftime("%b %d, %Y")
+            timestamp_str = record_time.strftime("%I:%M %p")
+
+            # Deterministic UI flags
+            is_unread = 1 if i < 15 else (1 if i % 4 == 0 else 0)
+            is_starred = 1 if i % 19 == 0 else 0
+            is_important = 1 if i % 13 == 0 else 0
+            body_low = body.lower()
+            has_attachment = 1 if any(k in body_low for k in ['attached', 'attachment', 'enclosed', 'invoice #', '.pdf', '.docx', '.xlsx']) else 0
+
+            records_to_insert.append((
+                email_id, user_id, sender_name, sender_email, target_recipient, reply_to,
+                subject, preview, body, links_json, "inbox", category,
+                is_unread, is_starred, is_important, has_attachment, avatar_color,
+                timestamp_str, date_str, created_at, created_at
+            ))
+
+        if records_to_insert:
+            cursor.executemany(
+                """
+                INSERT OR IGNORE INTO emails (
+                    id, user_id, sender_name, sender_email, recipient, reply_to, subject, preview, body,
+                    links_json, folder, category, is_unread, is_starred, is_important, has_attachment, avatar_color,
+                    timestamp, date, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                records_to_insert
+            )
+
+        # Mark user's mailbox as initialized
+        cursor.execute("UPDATE user_settings SET mailbox_initialized = 1 WHERE user_id = ?", (user_id,))
+        conn.commit()
+
+        cursor.execute("SELECT COUNT(*) as count FROM emails WHERE user_id = ?", (user_id,))
+        total = cursor.fetchone()["count"]
+
+        logger.info(
+            "User %s dataset import completed: %s inserted, %s skipped, %s total.",
+            user_id, len(records_to_insert), skipped, total
+        )
+        return {
+            "imported_count": len(records_to_insert),
+            "skipped_count": skipped,
+            "total_user_emails": total,
+            "source_dataset": "cleaned_emails.csv"
+        }
+
+
+def init_user_mailbox(user_id: int, recipient_email: Optional[str] = None):
+    """
+    Initializes a new user's mailbox with the authoritative dataset.
+    Called upon user registration (password & Google OAuth).
+    """
+    try:
+        import_dataset_emails_for_user(user_id, recipient_email=recipient_email, force=False)
+    except Exception as exc:
+        logger.error("Dataset mailbox initialization failed for user %s: %s. Falling back to seed.", user_id, exc)
+        seed_mock_emails_if_empty(user_id)
+
 
 
 

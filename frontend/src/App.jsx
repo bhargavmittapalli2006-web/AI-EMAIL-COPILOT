@@ -12,7 +12,7 @@ import { HelpModal } from './components/modals/HelpModal';
 import { NotificationCenter } from './components/modals/NotificationCenter';
 import { Login } from './pages/Login';
 
-import { MOCK_EMAILS, FOLDERS } from './data/mockInboxData';
+import { FOLDERS } from './data/mockInboxData';
 import { checkBackendHealth, analyzeEmailWithML } from './services/phishingService';
 import { fetchEmailIntelligence } from './services/geminiService';
 import { fetchReplySuggestions } from './services/replyService';
@@ -167,8 +167,9 @@ export function App() {
   };
 
 
-  // Email Presentation fixtures
-  const [emails, setEmails] = useState(MOCK_EMAILS);
+  // Authenticated Persistent Emails State (Loaded from SQLite backend)
+  const [emails, setEmails] = useState([]);
+
 
   // Backend Health State
   const [backendHealth, setBackendHealth] = useState({

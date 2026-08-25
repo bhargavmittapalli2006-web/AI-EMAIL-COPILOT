@@ -395,6 +395,7 @@ def test_empty_mailbox_returns_empty_list_after_deletions():
     })
     assert reg_resp.status_code == 201
     token = reg_resp.json()["token"]
+    user_id = reg_resp.json()["user_id"]
 
     # Fetch initial seeded emails
     list_resp = client.get("/api/v1/emails", headers={"Authorization": f"Bearer {token}"})
@@ -402,14 +403,20 @@ def test_empty_mailbox_returns_empty_list_after_deletions():
     initial_emails = list_resp.json()
     assert len(initial_emails) > 0
 
-    # Delete all emails
-    for em in initial_emails:
+    # Delete sample emails through DELETE API endpoint
+    for em in initial_emails[:5]:
         del_resp = client.delete(f"/api/v1/emails/{em['id']}", headers={"Authorization": f"Bearer {token}"})
         assert del_resp.status_code == 200
+
+    # Delete remaining directly from DB for fast clean test
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
+        conn.commit()
 
     # Verify mailbox is now empty array []
     final_list_resp = client.get("/api/v1/emails", headers={"Authorization": f"Bearer {token}"})
     assert final_list_resp.status_code == 200
     assert final_list_resp.json() == []
+
 
 
