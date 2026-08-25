@@ -326,6 +326,7 @@ class AuthResponse(BaseModel):
     display_name: str
     role: str
     token: str
+    auth_provider: Optional[str] = "local"
 
 
 class UserResponse(BaseModel):
@@ -333,11 +334,24 @@ class UserResponse(BaseModel):
     email: str
     display_name: str
     role: str
+    auth_provider: Optional[str] = "local"
+
+
+class GoogleAuthConfigResponse(BaseModel):
+    configured: bool
+    client_id: Optional[str] = None
+    redirect_uri: Optional[str] = None
+
+
+class GoogleAuthUrlResponse(BaseModel):
+    authorization_url: str
+    state: str
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Email Persistence Schemas
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class EmailCreateRequest(BaseModel):
     subject: str

@@ -1,6 +1,8 @@
 import logging
+import urllib.parse
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
@@ -20,12 +22,15 @@ from app.schemas import (
     LoginRequest,
     AuthResponse,
     UserResponse,
+    GoogleAuthConfigResponse,
+    GoogleAuthUrlResponse,
     EmailCreateRequest,
     EmailUpdateRequest,
     ReminderCreateRequest,
     ReminderUpdateRequest,
     ReminderResponse,
 )
+
 
 from app.services.email_parser import EmailParser
 from app.services.sender_analyzer import SenderAnalyzer
@@ -409,8 +414,96 @@ def get_current_user_profile(current_user: Dict[str, Any] = Depends(auth_service
         id=current_user["id"],
         email=current_user["email"],
         display_name=current_user["display_name"],
-        role=current_user["role"]
+        role=current_user["role"],
+        auth_provider=current_user.get("auth_provider", "local")
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Google OAuth 2.0 Endpoints (Phase 22)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/auth/google/config",
+    response_model=GoogleAuthConfigResponse,
+    tags=["Authentication"],
+    summary="Get Google OAuth configuration status"
+)
+def get_google_oauth_config():
+    """Returns whether Google OAuth 2.0 is configured on the backend without disclosing secrets."""
+    configured = auth_service.is_google_oauth_configured()
+    return GoogleAuthConfigResponse(
+        configured=configured,
+        client_id=auth_service.GOOGLE_CLIENT_ID if configured else None,
+        redirect_uri=auth_service.GOOGLE_REDIRECT_URI if configured else None,
+    )
+
+
+@app.get(
+    "/api/v1/auth/google/login",
+    response_model=GoogleAuthUrlResponse,
+    tags=["Authentication"],
+    summary="Generate Google OAuth 2.0 authorization URL"
+)
+def google_oauth_login(redirect: bool = False):
+    """
+    Generates a cryptographically secure OAuth 2.0 authorization URL with state CSRF protection.
+    If redirect=True, redirects browser directly to Google.
+    """
+    auth_data = auth_service.get_google_auth_url()
+    if redirect:
+        return RedirectResponse(url=auth_data["authorization_url"], status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    return GoogleAuthUrlResponse(**auth_data)
+
+
+@app.get(
+    "/api/v1/auth/google/callback",
+    tags=["Authentication"],
+    summary="Google OAuth 2.0 authorization callback"
+)
+async def google_oauth_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+):
+    """
+    Handles Google OAuth redirect: validates state, exchanges code, verifies OpenID Connect identity,
+    creates/links application session, and redirects user to frontend application.
+    """
+    frontend_base = auth_service.FRONTEND_URL.rstrip("/")
+    if error:
+        err_msg = error_description or error
+        return RedirectResponse(
+            url=f"{frontend_base}/?oauth_error={urllib.parse.quote(err_msg)}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{frontend_base}/?oauth_error={urllib.parse.quote('Missing Google authorization code or state.')}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+
+    try:
+        user_session = await auth_service.exchange_google_code_and_authenticate(code=code, state=state)
+        token = user_session["token"]
+        return RedirectResponse(
+            url=f"{frontend_base}/?oauth_token={urllib.parse.quote(token)}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+    except HTTPException as he:
+        return RedirectResponse(
+            url=f"{frontend_base}/?oauth_error={urllib.parse.quote(str(he.detail))}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+    except Exception as exc:
+        logger.error("Unhandled Google OAuth callback error: %s", exc)
+        return RedirectResponse(
+            url=f"{frontend_base}/?oauth_error={urllib.parse.quote('Authentication failed due to an unexpected error.')}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -158,9 +158,36 @@ def init_db():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id)")
 
+        # 8. OAuth Accounts Table (Phase 22 - Google OAuth 2.0)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                provider TEXT NOT NULL,
+                provider_subject TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(provider, provider_subject)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user ON oauth_accounts(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_oauth_accounts_provider_sub ON oauth_accounts(provider, provider_subject)")
+
+        # 9. OAuth States Table for CSRF Protection (Phase 22)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_states (
+                state TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        """)
+
         conn.commit()
     _initialized = True
     logger.info("Database schema initialized successfully.")
+
 
 # Auto-initialize on import
 init_db()
